@@ -21,7 +21,7 @@ body:
     attributes:
       label: App version
       description: Settings window → About (or Updates).
-      placeholder: "0.5.3"
+      placeholder: "0.5.4"
     validations:
       required: true
 

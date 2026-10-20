@@ -4,7 +4,7 @@ Persistent
 
 ;@Ahk2Exe-SetName Windows 11 Key Remapper
 ;@Ahk2Exe-SetDescription Windows 11 Key Remapper
-;@Ahk2Exe-SetVersion 0.5.3
+;@Ahk2Exe-SetVersion 0.5.4
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 Ricardo - MIT License
 ;@Ahk2Exe-SetOrigFilename Win11KeyRemapper.exe
 ;@Ahk2Exe-SetMainIcon ..\assets\icon.ico
@@ -32,7 +32,7 @@ Persistent
 
 #Include %A_ScriptDir%\lib\GlassToast.ahk
 
-APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.3"
+APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.4"
       , repo: "https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense"
       , api: "https://api.github.com/repos/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/latest"
       , lnk: A_Startup "\Windows 11 Key Remapper.lnk"
