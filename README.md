@@ -97,6 +97,9 @@ shows them all with their defaults.
 - **Tells you about new versions**: checks GitHub once a day (you can turn it
   off).
 
+- **An optional log** of what the app does, for finding problems (off by
+  default; it never records what you type).
+
 - **Light**: no admin rights, no driver, no service, no CPU use while idle.
 
 - **Free and open source** (MIT).

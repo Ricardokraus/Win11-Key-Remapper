@@ -533,6 +533,70 @@ CFG.launchPath := "auto"
 LaunchApp()
 Note("LaunchApp ran -> [" (RAN.Length ? RAN[RAN.Length] : "") "]")
 
+; ---- 10. Developer log and shutdown ----
+Eq(DefaultSettings().log, false, "log: off by default")
+logFile := LogPath()
+Check(!DEVLOG.on && !FileExist(logFile), "log: nothing written while off")
+c := DefaultSettings(), c.log := true
+WriteSettings(SETTINGS_PATH, c)
+Eq(LoadSettings(SETTINGS_PATH).log, 1, "log: Log=1 round trip")
+Reset(c)
+Check(DEVLOG.on && FileExist(logFile), "log: turned on, file next to the settings")
+txt := FileRead(logFile, "UTF-8")
+Check(RegExMatch(txt, "^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}  ---- Log on: Windows 11 Key Remapper " APP.version ", AutoHotkey ")
+    , "log: header with the time and the versions")
+Ev(0xFF, 0x175), Ev(0xFF, 0x175, true), RunQueue()
+txt := FileRead(logFile, "UTF-8")
+Check(InStr(txt, "Remapped key: sent {Blind}{vk90sc145 down}") && InStr(txt, "Remapped key: sent {Blind}{vk90sc145 up}"), "log: the remapped key's actions")
+before := StrLen(txt)
+Ev(0x41, 0x1E), Ev(0x41, 0x1E, true), RunQueue()     ; typing "a": passes through
+Eq(StrLen(FileRead(logFile, "UTF-8")), before, "log: typed keys are never written")
+LogError(Error("boom"), "Exit")
+Check(InStr(FileRead(logFile, "UTF-8"), "ERROR: boom"), "log: unexpected errors")
+DllCall("QueryPerformanceFrequency", "int64*", &qf := 0), DllCall("QueryPerformanceCounter", "int64*", &q0 := 0)
+loop 300
+    Log("cost test " A_Index)
+DllCall("QueryPerformanceCounter", "int64*", &q1 := 0)
+perLine := (q1 - q0) * 1000 / qf / 300
+Note("log: " Round(perLine, 3) " ms per line")
+Check(perLine < 2, "log: a line costs well under the hook's budget")
+FileAppend(Format("{:1100000}", ""), logFile)
+DEVLOG.n := 99
+Log("after the size check")
+Check(FileExist(DEVLOG.old) && FileGetSize(logFile) < 1000, "log: over 1 MB it becomes .old.log and starts again")
+
+class FakeRequest {
+    static aborted := 0
+    Abort() => FakeRequest.aborted++
+}
+UPD.req := FakeRequest(), UPD.state := "checking"
+n := TOASTS.Length
+Check(OnQueryEndSession(0, 0) = true && ENDING, "shutdown: answered at once")
+Check(FakeRequest.aborted = 1 && !UPD.req && UPD.state = "", "shutdown: an update check in progress is stopped")
+StatusToast(), SystemToast("x", "y")
+Eq(TOASTS.Length, n, "shutdown: no notifications while Windows ends the session")
+CheckUpdates(false)
+Check(UPD.state != "checking" && !UPD.req, "shutdown: no new update check")
+OnEndSession(0, 0)
+Check(!ENDING, "shutdown cancelled: back to normal")
+SystemToast("x", "y")
+Eq(TOASTS.Length, n + 1, "notifications again after a cancelled shutdown")
+SetTimer(AutoCheckUpdates, 0)
+txt := FileRead(logFile, "UTF-8")
+Check(InStr(txt, "Windows asks to end the session (shutdown or restart)") && InStr(txt, "Update check stopped")
+    && InStr(txt, "Shutdown cancelled: carrying on"), "log: the shutdown steps")
+Eq(EndReason(0x80000000) "|" EndReason(0x40000000) "|" EndReason(1), "sign out|shutdown or restart, forced|an installer asks apps to close", "shutdown reasons")
+
+ShowSettings("advanced")
+Eq(UI.logPath.Value, logFile, "gui: log file path shown")
+FlipSwitch("log")
+Check(!DEVLOG.on && !CFG.log && InStr(NT.last, "Developer log: off"), "gui: log switch off")
+FlipSwitch("log")
+Check(DEVLOG.on && CFG.log && InStr(FileRead(SETTINGS_PATH), "`nLog=1"), "gui: log switch on, saved")
+CloseSettings()
+Reset(DefaultSettings())
+Check(!DEVLOG.on, "log: off again with the defaults")
+
 QUEUE.Length := 0
 try DirDelete(tmp, true)
 FileAppend(PASSES " passed, " FAILS " failed`n", "*", "UTF-8")

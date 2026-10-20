@@ -221,13 +221,46 @@ Rules:
 ## One copy at a time, restart, hidden tray icon
 
 - `#SingleInstance Off`: at startup the app looks for a hidden AutoHotkey main
-  window titled `Win11KeyRemapper.Instance` (it renames its own). If another copy
-  exists, it posts it a registered message ("open your settings") and exits. That
-  is how users reach the settings when the tray icon is hidden, and it also stops
-  a source copy and an exe copy from running two hooks.
+  window titled exactly `Windows 11 Key Remapper` (it renames its own; up to
+  0.5.2 the title was `Win11KeyRemapper.Instance`, still recognized). If another
+  copy exists, it posts it a registered message ("open your settings") and exits.
+  That is how users reach the settings when the tray icon is hidden, and it also
+  stops a source copy and an exe copy from running two hooks. The title is the
+  app's name because Windows shows it when it lists the app at shutdown.
 - *Restart* (and an update) starts the app again with `--restart <old pid>`: the
   new copy waits for the old one to exit before installing its hook, and skips the
   "already running" check.
+
+## Shutdown
+
+Windows sends `WM_QUERYENDSESSION` to every top-level window, then
+`WM_ENDSESSION`; AutoHotkey runs `ExitApp` on the second one. An app that
+doesn't answer within a few seconds is listed as "preventing shutdown" under its
+window title. The app handles both messages (`OnQueryEndSession`,
+`OnEndSession`): it answers at once, sets `ENDING`, stops the update check in
+progress and the timers that start work (notifications, update checks, hook
+reinstalls), and starts nothing new until the session ends, or carries on if
+another app cancelled the shutdown.
+
+Measured by sending both messages to a running copy: ~20 ms to answer, ~30 ms
+to exit, also while a notification is being built (~60 ms). While another app
+blocks a shutdown, Windows lists every app still open, so seeing this one in
+the list doesn't mean it's the one blocking; the developer log shows when each
+message arrived.
+
+## Developer log
+
+*Settings* → *Advanced* → *Developer* → *Write a log* (`Log=1`), off by default.
+`Log()` appends one timestamped line per event to `Win11KeyRemapper.log` next to
+`settings.ini`: start (versions, path, monitors), settings changes, hook
+installs, the remapped key's actions, the app shortcut, notifications (with the
+time to build them), notices that warn, session lock/unlock, display, sleep,
+update checks, the settings window (with build/layout times), shutdown messages,
+exit, and unexpected errors (`OnError`). Each line is written at once (a crash
+or a forced shutdown keeps everything up to it) and costs ~0.2–0.4 ms; at 1 MB
+the file becomes `Win11KeyRemapper.old.log`. Rules: never log inside the
+keyboard hook, and never log keys the user types (only the configured target
+that the app sends).
 
 ## Updates
 
@@ -437,6 +470,9 @@ The tests cover the logic; this needs real keys:
 - [ ] Hide the tray icon, open the app again: the settings appear; turn it back on.
 - [ ] *Check now* (up to date / update available); *Download* opens the release page.
 - [ ] Start with Windows: sign out and in, the app starts.
+- [ ] *Advanced* → *Write a log* on; use the app, shut down and start again:
+  the log shows "Windows asks to end the session", "Exit (Shutdown…)" and the
+  new start. *Open* shows it; off again stops it.
 - [ ] Toast at startup, after unlock (Win+L) and after the display turns off/on.
 - [ ] Toast on a second monitor with a different scale isn't black.
 - [ ] Settings window on both monitors looks right.
@@ -474,8 +510,8 @@ To bring an installable, self-updating exe back:
    secret), sign the exe, and add it to the zip and `SHA256SUMS.txt`.
 3. Optionally an installer (Inno Setup, per user in `%LOCALAPPDATA%\Programs`, no
    admin, so the in-place update keeps working). It must be signed too, close the
-   running copy first (post `WM_COMMAND 65307` to the `Win11KeyRemapper.Instance`
-   window) and remove the startup shortcut and `settings.ini` on uninstall.
+   running copy first (post `WM_COMMAND 65307` to the hidden `Windows 11 Key
+   Remapper` window, or `Win11KeyRemapper.Instance` for 0.5.2 and older) and remove the startup shortcut and `settings.ini` on uninstall.
 4. The app side is already there: `InstallUpdate()` replaces a compiled exe in
    place, `SetAutostart()` points the shortcut at the exe, and the icon comes
    from the exe's resources.

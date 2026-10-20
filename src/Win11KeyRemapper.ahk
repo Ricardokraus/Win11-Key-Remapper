@@ -40,7 +40,11 @@ APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.2"
 
 ; Finding the running copy: its hidden main window gets this title, and a
 ; second launch posts it INSTANCE_MSG ("open your settings") before exiting.
-INSTANCE_TITLE := "Win11KeyRemapper.Instance"
+; The title is also what Windows shows if it lists the app while shutting
+; down, so it's the app's name (up to 0.5.2 it was an internal name, still
+; recognized so an older copy that's running is found too).
+INSTANCE_TITLE := "Windows 11 Key Remapper"
+INSTANCE_TITLES := [INSTANCE_TITLE, "Win11KeyRemapper.Instance"]
 INSTANCE_MSG := DllCall("RegisterWindowMessage", "str", "Win11KeyRemapper.ShowSettings", "uint")
 
 ; A key-down that arrives this soon after the previous one, without a key-up
@@ -77,7 +81,7 @@ LINKS := [["Feedback", [["Tell us it works on your laptop", "/issues/new?templat
 SWITCH_LABELS := Map("remapping", "Remapping", "autostart", "Start with Windows", "trayIcon", "Tray icon"
                    , "launchEnabled", "App shortcut", "distinguish", "Distinguish left and right"
                    , "toastGlass", "Transparency effects", "checkUpdates", "Automatic update checks"
-                   , "matchSC", "Exact key match")
+                   , "matchSC", "Exact key match", "log", "Developer log")
 
 ; Settings window colors (RGB). "dim" is used for disabled rows; nav* are
 ; sidebar entries, row* the clickable rows on a card, btn* the buttons (the
@@ -213,6 +217,11 @@ CheckUpdates={CheckUpdates}
 ; default), Light or Dark.
 Theme={Theme}
 
+; Developer log. 1 = write what the app does, with times, to
+; Win11KeyRemapper.log next to this file, to find out what went wrong.
+; 0 = off (default). It never records the keys you type.
+Log={Log}
+
 )"
 
 ; ---- Runtime state ---------------------------------------------------------
@@ -236,6 +245,9 @@ NT := {gui: 0, hwnd: 0, phase: "", last: ""}   ; the notice inside the settings 
 SL := {W: 820, H: 630, side: 220, cx: 236, cw: 560, rx: 780, kvX: 426, btnX: 684}
 ; Update check: state "" | checking | latest | available | error
 UPD := {state: "", latest: "", page: "", zip: "", sums: "", req: 0, manual: false, t0: 0, notified: ""}
+; Developer log (Settings > Advanced > Developer): file paths, lines since the size check
+DEVLOG := {on: false, path: "", old: "", n: 0}
+ENDING := false           ; Windows is shutting down or signing out: start nothing new
 
 Main()
 
@@ -245,6 +257,7 @@ Main()
 
 Main() {
     global SETTINGS_PATH, CFG, POWER_NOTIFY
+    t0 := A_TickCount
     args := ParseArgs()
     if args.restartPid {
         try ProcessWaitClose(args.restartPid, 5)    ; restart/update: let the old copy exit first
@@ -268,9 +281,13 @@ Main() {
     if (firstRun || !SettingsExplained(SETTINGS_PATH)) {   ; new, or from a version without the comments
         try WriteSettings(SETTINGS_PATH, CFG)
     }
-    ApplySettings()
+    ApplySettings()                         ; also turns the log on, if it's on
+    OnError(LogError)
+    Log("Settings: " SETTINGS_PATH (firstRun ? " (first run)" : "") " | " Summary())
     ApplyAppTheme(CFG.theme)                ; dark/light tray menu
     OnMessage(0x1A, OnSettingChange)        ; WM_SETTINGCHANGE: Windows switched light/dark
+    OnMessage(0x11, OnQueryEndSession)      ; shutting down, restarting or signing out
+    OnMessage(0x16, OnEndSession)
 
     HOOK.proc := CallbackCreate(KeyboardProc)
     if !HookInstall() {
@@ -304,6 +321,7 @@ Main() {
     else if (CFG.toastWhen != "Never")
         SetTimer(StatusToast, -2000)        ; give the desktop time to paint
     ScheduleUpdateCheck()
+    Log("Ready in " A_TickCount - t0 " ms")
 }
 
 ; --restart <pid>: started by Restart or by an update; --updated: show "Updated";
@@ -328,14 +346,18 @@ ParseArgs() {
 }
 
 OtherInstance() {
-    prev := A_DetectHiddenWindows
+    prev := A_DetectHiddenWindows, prevMode := A_TitleMatchMode
     DetectHiddenWindows(true)
+    SetTitleMatchMode(3)                    ; the exact title: other scripts' titles are their paths
     found := 0
-    for hwnd in WinGetList(INSTANCE_TITLE " ahk_class AutoHotkey")
-        if (hwnd != A_ScriptHwnd) {
-            found := hwnd
-            break
-        }
+    for title in INSTANCE_TITLES {
+        for hwnd in WinGetList(title " ahk_class AutoHotkey")
+            if (hwnd != A_ScriptHwnd) {
+                found := hwnd
+                break 2
+            }
+    }
+    SetTitleMatchMode(prevMode)
     DetectHiddenWindows(prev)
     return found
 }
@@ -366,17 +388,122 @@ RestartApp() {
         Notice("Couldn't restart", "Start the app again from its folder", "warn")
         return
     }
+    Log("Restarting")
     ExitApp
 }
 
-AppExit(*) {
+AppExit(reason, code) {
+    t := A_TickCount
     ReleasePresses()
     RunQueue()                              ; send the key-up of a held remapped key
     if HOOK.h
         DllCall("UnhookWindowsHookEx", "ptr", HOOK.h), HOOK.h := 0
+    StopUpdateCheck()
     DllCall("wtsapi32\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
     if POWER_NOTIFY
         DllCall("UnregisterPowerSettingNotification", "ptr", POWER_NOTIFY)
+    Log("Exit (" reason ", code " code "), cleaned up in " A_TickCount - t " ms")
+}
+
+; ---- Shutdown ----------------------------------------------------------------
+; Windows asks every app before shutting down, restarting or signing out
+; (WM_QUERYENDSESSION), then tells it the session is ending (WM_ENDSESSION),
+; where AutoHotkey runs ExitApp. An app that's still busy a few seconds later
+; is listed as "preventing shutdown", under its window's title (here the
+; hidden INSTANCE_TITLE). So: answer at once, and start nothing new that
+; could keep this thread busy (notifications, update checks). Measured: the
+; answer takes ~20 ms and the exit ~30 ms, even while a notification is
+; being built. While another app blocks the shutdown, Windows lists every app
+; still open, this one included: that alone doesn't mean it's the culprit.
+OnQueryEndSession(wParam, lParam, *) {
+    global ENDING := true
+    Log("Windows asks to end the session (" EndReason(lParam) ")")
+    for fn in [StatusToast, AutoCheckUpdates, HookInstall]
+        SetTimer(fn, 0)
+    StopUpdateCheck()
+    try GT_Free()
+    return true
+}
+
+OnEndSession(wParam, lParam, *) {
+    global ENDING
+    if wParam {
+        Log("The session is ending (" EndReason(lParam) "): exiting")
+        return                              ; nothing returned: AutoHotkey exits now
+    }
+    ENDING := false                         ; another app cancelled it: carry on
+    Log("Shutdown cancelled: carrying on")
+    ScheduleUpdateCheck()
+    return 0
+}
+
+EndReason(lParam) {
+    reason := lParam & 0x80000000 ? "sign out" : "shutdown or restart"     ; ENDSESSION_LOGOFF
+    if (lParam & 0x40000000)                ; ENDSESSION_CRITICAL
+        reason .= ", forced"
+    if (lParam & 0x1)                       ; ENDSESSION_CLOSEAPP: an installer needs the files
+        reason := "an installer asks apps to close"
+    return reason
+}
+
+; ---- Developer log -------------------------------------------------------------
+; One line per event, with the time, appended at once so a crash or a forced
+; shutdown keeps everything up to it. Costs a fraction of a millisecond per
+; line, and only events are logged: never the keys you type (the hook doesn't
+; log at all; only the remapped key's actions are). Over 1 MB the file becomes
+; Win11KeyRemapper.old.log and a new one starts.
+
+LogPath() {
+    SplitPath(SETTINGS_PATH, , &dir)
+    return dir "\Win11KeyRemapper.log"
+}
+
+SetLog(on) {
+    on := on ? true : false
+    if (on = DEVLOG.on)
+        return
+    if !on {
+        Log("Log turned off")
+        DEVLOG.on := false
+        return
+    }
+    DEVLOG.path := LogPath(), DEVLOG.old := RegExReplace(DEVLOG.path, "\.log$", ".old.log")
+    DEVLOG.on := true, DEVLOG.n := 0
+    Log("---- Log on: " APP.name " " APP.version ", AutoHotkey " A_AhkVersion (A_PtrSize = 8 ? " 64-bit" : " 32-bit")
+      . ", Windows " A_OSVersion ", " (A_IsCompiled ? "exe" : "script") " " A_ScriptFullPath
+      . (A_Args.Length ? ", args: " JoinArgs(A_Args) : "") ", " MonitorGetCount() " monitor(s), main " A_ScreenDPI " dpi")
+}
+
+Log(msg) {
+    if !DEVLOG.on
+        return ""
+    if (++DEVLOG.n >= 100) {                   ; check the size now and then, not on every line
+        DEVLOG.n := 0
+        try {
+            if (FileGetSize(DEVLOG.path) > 1048576)
+                FileMove(DEVLOG.path, DEVLOG.old, 1)
+        }
+    }
+    try FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss.") Format("{:03}", A_MSec) "  " msg "`r`n", DEVLOG.path, "UTF-8")
+    return ""
+}
+
+LogError(e, mode) {                         ; unexpected errors; the usual dialog still shows
+    Log("ERROR: " e.Message (e.Extra != "" ? " (" e.Extra ")" : "") " | " e.What " line " e.Line)
+}
+
+JoinArgs(arr) {
+    out := ""
+    for a in arr
+        out .= (out = "" ? "" : " ") a
+    return out
+}
+
+OpenLog(*) {
+    if FileExist(LogPath())
+        Run('notepad.exe "' LogPath() '"')
+    else
+        Notice("No log yet", "Turn on Write a log, then use the app", "info", 3500)
 }
 
 IconPath() => FullPath(A_ScriptDir "\..\assets\icon.ico")
@@ -397,7 +524,7 @@ DefaultSettings() {
           , launchEnabled: true, launchMods: ["RCtrl"], launchVK: 0xFF, launchSC: 0x175
           , launchAnySide: false, launchPath: "auto"
           , toastWhen: "Always", toastPosition: "TopCenter", toastAnim: "Slide", toastGlass: true
-          , trayIcon: true, checkUpdates: true, theme: "System"}
+          , trayIcon: true, checkUpdates: true, theme: "System", log: false}
 }
 
 CloneSettings(c) {
@@ -454,7 +581,8 @@ LoadSettings(path) {
           , toastGlass: IniBool(path, "General", "ToastTransparency", d.toastGlass)
           , trayIcon: IniBool(path, "General", "TrayIcon", d.trayIcon)
           , checkUpdates: IniBool(path, "General", "CheckUpdates", d.checkUpdates)
-          , theme: IniChoice(path, "General", "Theme", THEME_PREFS, d.theme)}
+          , theme: IniChoice(path, "General", "Theme", THEME_PREFS, d.theme)
+          , log: IniBool(path, "General", "Log", d.log)}
     legacy := StrLower(IniStr(path, "Remap", "Mode", ""))
     if LEGACY_MODES.Has(legacy) {
         lock := LEGACY_MODES[legacy]
@@ -485,7 +613,8 @@ SettingsText(c) {
         , "LaunchVK", Hex(c.launchVK), "LaunchSC", Hex(c.launchSC), "LaunchAnySide", c.launchAnySide ? 1 : 0
         , "LaunchPath", c.launchPath, "ToastWhen", c.toastWhen, "ToastPosition", c.toastPosition
         , "ToastAnimation", c.toastAnim, "ToastTransparency", c.toastGlass ? 1 : 0
-        , "TrayIcon", c.trayIcon ? 1 : 0, "CheckUpdates", c.checkUpdates ? 1 : 0, "Theme", c.theme)
+        , "TrayIcon", c.trayIcon ? 1 : 0, "CheckUpdates", c.checkUpdates ? 1 : 0, "Theme", c.theme
+        , "Log", c.log ? 1 : 0)
     text := SETTINGS_TEMPLATE
     for key, value in values
         text := StrReplace(text, "{" key "}", value)
@@ -587,6 +716,7 @@ ApplySettings() {
     GTCFG.glass := c.toastGlass, GTCFG.solidTheme := c.theme = "System" ? "" : StrLower(c.theme)
     A_IconHidden := !c.trayIcon
     UpdateTray()
+    SetLog(c.log)
 }
 
 ; ============================================================================
@@ -598,11 +728,14 @@ HookInstall() {
     ; anything slow, because Windows silently drops a hook that times out.
     hNew := DllCall("SetWindowsHookEx", "int", 13, "ptr", HOOK.proc            ; WH_KEYBOARD_LL
                   , "ptr", DllCall("GetModuleHandle", "ptr", 0, "ptr"), "uint", 0, "ptr")
-    if !hNew
+    if !hNew {
+        Log("Couldn't install the keyboard hook (error " A_LastError ")")
         return false
+    }
     old := HOOK.h, HOOK.h := hNew
     if old
         DllCall("UnhookWindowsHookEx", "ptr", old)
+    Log("Keyboard hook " (old ? "reinstalled" : "installed"))
     return true
 }
 
@@ -744,10 +877,15 @@ RunQueue() {
         act := QUEUE.RemoveAt(1)
         try {
             switch act.do {
-                case "send":   SendInput(act.keys)
-                case "launch": LaunchApp()
+                case "send":
+                    SendInput(act.keys)
+                    Log("Remapped key: sent " act.keys)    ; the configured target only, never typed keys
+                case "launch":
+                    Log("App shortcut pressed")
+                    LaunchApp()
             }
-        }
+        } catch as e
+            Log("Couldn't " (act.do = "send" ? "send " act.keys : "open the app") ": " e.Message)
     }
 }
 
@@ -923,10 +1061,12 @@ DetectNitroSense(force := false) {
         for rel in ["\NitroSense\Prerequisites\NitroSenseLauncher.exe", "\NitroSense\NitroSense.exe"]
             if FileExist(dir rel) {
                 NS.target := dir rel
+                Log("NitroSense found: " NS.target)
                 return NS.target
             }
     }
     ; Microsoft Store version: look it up in the Apps folder (can be slow)
+    t := A_TickCount
     try {
         for item in ComObject("Shell.Application").NameSpace("shell:AppsFolder").Items()
             if InStr(item.Name, "NitroSense") {
@@ -934,6 +1074,7 @@ DetectNitroSense(force := false) {
                 break
             }
     }
+    Log("NitroSense " (NS.target != "" ? "found: " NS.target : "not found") " (searched the apps in " A_TickCount - t " ms)")
     HookInstall()                           ; in case that took long enough to drop the hook
     return NS.target
 }
@@ -948,6 +1089,7 @@ LaunchApp() {
             target := DetectNitroSense(true)    ; installed or moved since the last look
     }
     if !TargetExists(target) {
+        Log("App to open not found: " CFG.launchPath)
         SystemToast("App not found", "Choose it in Settings", "warn")
         return
     }
@@ -957,7 +1099,9 @@ LaunchApp() {
             Run('"' target '"', dir)
         } else
             Run(target)
-    } catch {
+        Log("Opened " target)
+    } catch as e {
+        Log("Couldn't open " target ": " e.Message)
         SystemToast("Couldn't open the app", "Check the app in Settings", "warn")
     }
     HookInstall()
@@ -973,24 +1117,36 @@ LaunchApp() {
 ; smaller component (see "Notices inside the settings window").
 SystemToast(title, sub, kind := "ok", holdMs := 5000) {
     if (CFG.toastWhen != "Never" || kind = "warn")
-        GlassToast(title, sub, kind, holdMs)
+        ShowToast(title, sub, kind, holdMs)
 }
 
 StatusToast() {
     if PAUSED
-        GlassToast(APP.short " is paused", "Resume it from the tray icon", "info")
+        ShowToast(APP.short " is paused", "Resume it from the tray icon", "info")
     else
-        GlassToast(APP.short " is active", Summary())
+        ShowToast(APP.short " is active", Summary())
+}
+
+; Building one (screen capture + blur) is the heaviest thing the app does, so
+; the log says how long it took. None while Windows is shutting down.
+ShowToast(title, sub, kind := "ok", holdMs := 5000) {
+    if ENDING
+        return
+    t := A_TickCount
+    GlassToast(title, sub, kind, holdMs)
+    Log("Notification: " title " | " sub " (" kind ", " (GTCFG.glass ? "glass" : "solid") ", built in " A_TickCount - t " ms)")
 }
 
 OnSessionChange(wParam, lParam, msg, hwnd) {
     global LOCKED
     if (wParam = 0x8) {                     ; WTS_SESSION_UNLOCK
+        Log("Session unlocked")
         LOCKED := false
         SetTimer(HookInstall, -500)
         if (CFG.toastWhen = "Always")
             SetTimer(StatusToast, -1200)    ; wait until the desktop is visible
     } else if (wParam = 0x7) {              ; WTS_SESSION_LOCK
+        Log("Session locked")
         LOCKED := true
         SetTimer(GT_Free, -1)
     }
@@ -1000,13 +1156,18 @@ OnSessionChange(wParam, lParam, msg, hwnd) {
 ; console display state is watched instead (off = 0, on = 1, dimmed = 2)
 OnPower(wParam, lParam, msg, hwnd) {
     static prev := -1                       ; the first notification is the current state
+    if (wParam = 0x4)                       ; PBT_APMSUSPEND
+        Log("Going to sleep")
     if (wParam = 0x7 || wParam = 0x12) {    ; resumed from sleep
+        Log("Resumed from sleep")
         SetTimer(HookInstall, -1000)
         return true
     }
     if (wParam != 0x8013)                   ; PBT_POWERSETTINGCHANGE
         return
     state := NumGet(lParam, 20, "uint")     ; POWERBROADCAST_SETTING: GUID(16) + length(4) + data
+    if (prev != -1 && state != prev)
+        Log("Display " (state = 0 ? "off" : state = 1 ? "on" : "dimmed"))
     if (state = 0)
         SetTimer(GT_Free, -1)
     else if (state = 1 && prev = 0 && !LOCKED) {
@@ -1071,6 +1232,7 @@ SetPaused(state, toast := true) {
     global PAUSED
     ReleasePresses()
     PAUSED := state ? 1 : 0
+    Log("Remapping " (PAUSED ? "paused" : "resumed"))
     UpdateTray()
     RefreshSettings()                       ; if the window is open
     if !toast
@@ -1136,8 +1298,10 @@ UpdateAction() {
 }
 
 CheckUpdates(manual := false) {
-    if (UPD.state = "checking")
+    if (UPD.state = "checking" || ENDING)
         return
+    Log("Checking for updates (" (manual ? "Check now" : "daily check") ")")
+    UPD.t0 := A_TickCount
     try {
         req := ComObject("WinHttp.WinHttpRequest.5.1")
         req.Open("GET", APP.api, true)
@@ -1176,7 +1340,22 @@ PollUpdates() {
     UpdateDone("available", UPD.manual)
 }
 
+; Stops a check in progress (exiting, or Windows is shutting down): a pending
+; request must not keep the app busy
+StopUpdateCheck() {
+    SetTimer(PollUpdates, 0)
+    if UPD.req {
+        try UPD.req.Abort()
+        UPD.req := 0
+        Log("Update check stopped")
+    }
+    if (UPD.state = "checking")
+        UPD.state := ""
+}
+
 UpdateDone(state, manual) {
+    Log("Update check: " (state = "available" ? "version " UPD.latest " available" : state = "latest" ? "up to date" : "failed")
+      . (UPD.t0 ? " (" A_TickCount - UPD.t0 " ms)" : ""))
     UPD.state := state
     RefreshSettings()
     if (state = "available") {
@@ -1332,7 +1511,9 @@ ShowSettings(page := "", posX := "", posY := "") {
         return
     }
     DRAFT := CloneSettings(CFG)
+    t := A_TickCount
     BuildSettings(page != "" ? page : "keys", posX, posY)
+    Log("Settings window opened (" UI.page ", " UI.dpi " dpi, built in " A_TickCount - t " ms)")
     if !NS.checked
         SetTimer(DetectForApp, -150)        ; after the window is on screen
 }
@@ -1584,6 +1765,21 @@ BuildAdvancedPage() {
     y := Row(grp, 64)
     RowText("advanced", y, 64, "Reset all settings", "Puts every option back to its default value.", 400)
     NewButton("advanced", SL.rx - 110, y + 16, 110, "Reset…", "danger").OnEvent("Click", ResetSettings)
+
+    grp := Group("advanced", grp.y + grp.h + 16, "Developer")
+    y := Row(grp, 64)
+    RowText("advanced", y, 64, "Write a log", "What the app does, with times. For finding problems.", 400
+          , "Writes one line per event (start, settings changes, the remapped key's`n"
+          . "actions, notifications, updates, sleep, shutdown) to Win11KeyRemapper.log,`n"
+          . "next to the settings file. It never records the keys you type.`n`n"
+          . "Each line takes a fraction of a millisecond and the file stays under about`n"
+          . "2 MB, so it doesn't slow anything down. Check it before sharing it: it`n"
+          . "contains folder paths.")
+    NewSwitch("log", "advanced", SL.rx - 40, y + 22)
+    y := Row(grp, 64)
+    r := RowText("advanced", y, 64, "Log file", "", SL.rx - 110 - SL.cx - 16)
+    UI.logPath := r.desc
+    NewButton("advanced", SL.rx - 100, y + 16, 100, "Open").OnEvent("Click", OpenLog)
 }
 
 BuildAboutPage() {
@@ -2034,7 +2230,7 @@ ApplyPendingDpi() {
     if (!UI.gui || !UI.pendingDpi)
         return
     old := PMv2()
-    dpi := UI.pendingDpi
+    dpi := UI.pendingDpi, t := A_TickCount
     UI.pendingDpi := 0
     Freeze(true)
     for hwnd in UI.stretchHidden            ; back, still frozen: nothing shows yet
@@ -2047,6 +2243,7 @@ ApplyPendingDpi() {
     }
     Freeze(false)                           ; composed off-screen, shown at once
     PMv2(old)
+    Log("Settings window laid out for " dpi " dpi in " A_TickCount - t " ms")
 }
 
 FreeDpiShot() {
@@ -2087,6 +2284,8 @@ OnSettingsMove(wParam, lParam, msg, hwnd) {
 ; it, closed with it) and click-through, so it can't be clicked away.
 
 Notice(title, sub := "Saved", kind := "ok", holdMs := 2500) {
+    if (kind = "warn")                      ; the rest just confirm what's already logged
+        Log("Warning shown: " title " | " sub)
     if !UI.gui                              ; window closed: a system notification
         return SystemToast(title, sub, kind, Max(holdMs, 4000))
     NT.last := title " · " sub
@@ -2421,9 +2620,12 @@ CommitDraft(what := "") {
     CFG := CloneSettings(DRAFT)
     try WriteSettings(SETTINGS_PATH, CFG)
     catch as e {
+        Log("Couldn't save the settings: " e.Message)
         what := ""
         Notice("Couldn't save the settings", e.Message, "warn", 5000)
     }
+    if (what != "")
+        Log("Setting changed: " what)
     ApplySettings()
     ApplyAppTheme(CFG.theme)
     ScheduleUpdateCheck()
@@ -2492,6 +2694,8 @@ RefreshSettings() {
     ; Advanced
     SetSwitch("matchSC", d.matchSC)
     UI.settingsPath.Value := SETTINGS_PATH
+    SetSwitch("log", d.log)
+    UI.logPath.Value := LogPath()
     PMv2(old)
 }
 
@@ -2651,10 +2855,10 @@ Dialog(text, opts) {
 PreviewToast(*) {
     saved := [GTCFG.position, GTCFG.animation, GTCFG.glass]
     GTCFG.position := DRAFT.toastPosition, GTCFG.animation := DRAFT.toastAnim, GTCFG.glass := DRAFT.toastGlass
-    try GlassToast("This is how notifications look"
-                 , TOAST_POSITION_LABELS[ChoiceIndex(TOAST_POSITIONS, DRAFT.toastPosition)] " · "
-                 . TOAST_ANIM_LABELS[ChoiceIndex(TOAST_ANIMS, DRAFT.toastAnim)] " · "
-                 . (DRAFT.toastGlass ? "Glass" : "Solid"), "ok", 3000)
+    try ShowToast("This is how notifications look"
+                , TOAST_POSITION_LABELS[ChoiceIndex(TOAST_POSITIONS, DRAFT.toastPosition)] " · "
+                . TOAST_ANIM_LABELS[ChoiceIndex(TOAST_ANIMS, DRAFT.toastAnim)] " · "
+                . (DRAFT.toastGlass ? "Glass" : "Solid"), "ok", 3000)
     GTCFG.position := saved[1], GTCFG.animation := saved[2], GTCFG.glass := saved[3]
 }
 
@@ -2684,6 +2888,7 @@ CloseSettings(*) {
 DestroySettings() {
     if !UI.gui
         return
+    Log("Settings window closed")
     ToolTip()
     for fn in [CheckInfoTip, CheckHot, AnimTick, ApplyPendingDpi]
         SetTimer(fn, 0)

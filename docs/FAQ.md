@@ -16,6 +16,8 @@
 - [The Acer Num Lock / Caps Lock pop-up still shows](#acer-pop-up)
 - [Does it work on other laptops or keyboards?](#other-keyboards)
 - [The notification stutters on my old or low-power PC](#stutter)
+- [Windows says the app is preventing shutdown](#shutdown)
+- [Something odd happened. How do I see what the app did?](#log)
 
 **Privacy and internals**
 
@@ -116,6 +118,31 @@ blurs it, each time it appears. Turn off *Transparency effects* in Settings →
 *Notifications*: you get a solid card in the settings window's colors, with no
 capture at all. Or set *Show notifications* to *Only when the app starts* or
 *Never*.
+
+<a name="shutdown"></a>
+### Windows says the app is preventing shutdown
+
+When one app holds up a shutdown, Windows shows a list of every app that's still
+open, so this one can appear there without being the cause: it answers Windows
+in a few hundredths of a second and closes right after. If you think it is the
+one blocking, turn on the [developer log](#log), and after the next shutdown
+look at the last lines: they show when Windows asked and when the app closed.
+Then [report it](https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/issues/new?template=bug_report.yml).
+
+(Up to version 0.5.2 the app appeared in that list as
+*Win11KeyRemapper.Instance*; now it's *Windows 11 Key Remapper*.)
+
+<a name="log"></a>
+### Something odd happened. How do I see what the app did?
+
+Turn on Settings → *Advanced* → *Write a log*. From then on the app writes one
+line per event, with the time, to `Win11KeyRemapper.log` next to the settings
+file: when it started, settings you changed, each time the remapped key worked,
+notifications, sleep, shutdown, errors… *Open* shows it in Notepad.
+
+It never records the keys you type, each line takes a fraction of a
+millisecond, and the file stays under about 2 MB, so you can leave it on. If you
+attach it to an issue, have a look first: it contains folder paths.
 
 ---
 

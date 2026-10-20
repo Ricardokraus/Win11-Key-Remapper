@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Developer log** (*Settings* → *Advanced* → *Developer* → *Write a log*, off
+  by default): one line per event with the time, in `Win11KeyRemapper.log` next
+  to the settings file — start, settings changes, the remapped key's actions,
+  notifications, updates, sleep, shutdown, errors. It never records the keys you
+  type, each line takes a fraction of a millisecond, and the file stays under
+  about 2 MB. *Open* shows it in Notepad. In `settings.ini`: `Log=1`.
+
+### Changed
+
+- Shutting down, restarting or signing out: the app answers Windows at once and
+  starts nothing new (notifications, update checks) until the session ends, or
+  carries on if the shutdown is cancelled. An update check in progress is
+  stopped.
+- The app's hidden window is now called *Windows 11 Key Remapper* instead of
+  *Win11KeyRemapper.Instance*: it's the name Windows shows if it lists the app
+  while shutting down.
+
 ## [0.5.2] - 2026-10-10
 
 ### Changed

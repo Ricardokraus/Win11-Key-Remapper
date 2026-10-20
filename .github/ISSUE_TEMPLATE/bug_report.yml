@@ -64,6 +64,13 @@ body:
       render: ini
 
   - type: textarea
+    id: log
+    attributes:
+      label: Log (optional)
+      description: Settings window → Advanced → turn on Write a log, make the problem happen again, then Open and paste the last lines. Check them first, they contain folder paths.
+      render: text
+
+  - type: textarea
     id: extra
     attributes:
       label: Anything else?
