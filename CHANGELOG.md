@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Light theme easier on the eyes**: a warm stone grey instead of white, for
+  the settings window, its notices and the solid notifications.
+- **Drop-down lists of our own**, instead of Windows' white, square ones: they
+  look like the app's buttons, with a chevron, and open a rounded list with a
+  soft shadow that slides in, highlights the item under the mouse and marks the
+  chosen one. A click outside, Esc or Alt closes it; arrows and Enter work too.
+- **The ⓘ explanations** appear in a bubble in the window's colors instead of
+  Windows' yellowish tooltip.
+- *Action* is now *What it does*, and its choices read as states, not commands:
+  *Works as another key or shortcut*, *Does nothing (disabled)*, *Works as
+  usual (not remapped)*.
+- README screenshots updated.
+
 ## [0.5.3] - 2026-10-20
 
 ### Added

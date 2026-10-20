@@ -371,7 +371,7 @@ UI.mode.Value := 2
 OnModeChange(UI.mode)
 ctx := PMv2(), UI.launchBtn.GetPos(, &yHidden), PMv2(ctx)
 Check(CFG.mode = "Disable" && !UI.targetBtn.Visible && !UI.targetKeys.Visible, "gui: Sends row hidden when the key does nothing")
-Check(InStr(NT.last, "Action: Do nothing") && !InStr(LastToast(), "Action"), "gui: a notice inside the window says what was saved")
+Check(InStr(NT.last, "The key: Does nothing") && !InStr(LastToast(), "The key"), "gui: a notice inside the window says what was saved")
 DRAFT.targetVK := 0
 UI.mode.Value := 1
 OnModeChange(UI.mode)
@@ -417,6 +417,29 @@ Check(!A_IconHidden, "gui: tray icon back")
 UI.toastWhen.Value := 2
 DRAFT.toastWhen := TOAST_WHENS[2], CommitDraft()
 Eq(LoadSettings(SETTINGS_PATH).toastWhen, "Startup", "gui: notifications only at startup")
+
+; Drop-down lists of our own
+ddw := UI.toastAnim
+Check(ddw.kind = "select" && ddw.Text = TOAST_ANIM_LABELS[ddw.Value] && ddw.items.Length = 3, "select: shows the chosen item")
+OpenSelect(ddw)
+Check(!SEL.wd, "select: doesn't open while the window is hidden")
+SEL.wd := ddw, SEL.gui := 0, SEL.hwnd := 0, SEL.alpha := 0, SEL.dy := 0
+SEL.pad := 12, SEL.inset := 4, SEL.itemH := 36, SEL.w := 200, SEL.h := 3 * 36 + 8, SEL.x := 0, SEL.y := 0
+Eq(SelectItemAt(30, 16) " " SelectItemAt(30, 16 + 2 * 36 + 5) " " SelectItemAt(5, 30) " " SelectItemAt(30, 16 + 3 * 36 + 1) " " SelectItemAt(30, 10)
+ , "1 3 0 0 0", "select: the item under the mouse (outside = none)")
+SEL.hot := 1, SEL.down := 0
+OnSettingsKey(0x28, 0, 0x100, 0), OnSettingsKey(0x28, 0, 0x100, 0), OnSettingsKey(0x28, 0, 0x100, 0)
+Eq(SEL.hot, 3, "select: arrow keys move, and stop at the last item")
+OnSettingsKey(0x0D, 0, 0x100, 0)
+Critical "Off"
+Sleep 50
+Critical
+Check(!SEL.wd && ddw.Value = 3 && CFG.toastAnim = "None" && InStr(NT.last, "Animation: None"), "select: Enter chooses, applies and saves")
+SEL.wd := ddw, SEL.hot := 1, SEL.alpha := 0
+OnSettingsKey(0x1B, 0, 0x100, 0)
+Check(!SEL.wd && ddw.Value = 3, "select: Esc closes without changing")
+Eq(OnSettingsKey(0x28, 0, 0x100, 0), "", "select: keys pass through when no list is open")
+ddw.Value := 1, DRAFT.toastAnim := "Slide", CommitDraft()
 
 ; Never: no system notifications (warnings still show); notices inside the window do
 DRAFT.toastWhen := "Never", CommitDraft()

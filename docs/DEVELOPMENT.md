@@ -129,7 +129,7 @@ Rules:
   and the control on the right. `SL` holds the layout in logical pixels.
 - **Changes apply at once** (`CommitDraft`): the window edits `DRAFT`; each change
   is validated and, if complete, copied to `CFG`, saved and applied. If something
-  blocks it (e.g. *Press another key* without a key), the row says so and the
+  blocks it (e.g. *Works as another key* without a key), the row says so and the
   previous settings stay active. Restart and Exit are red buttons in *General*
   (no confirmation); Reset in *Advanced* asks first, because it loses settings.
 - **Drawing**: standard Win32 controls can't draw rounded cards, buttons with
@@ -137,9 +137,26 @@ Rules:
   toast library's helpers). The cards of the current section are one bitmap
   painted on `WM_ERASEBKGND`. Everything clickable is a **widget** (`UiWidget`):
   a Picture control (`SS_BITMAP | SS_NOTIFY`) redrawn by `RenderWidget` for each
-  state: buttons (normal, `danger`, `accent`), switches, sidebar entries, keycap
-  views, the About card and its link rows. Only drop-down lists are native.
+  state: buttons (normal, `danger`, `accent`), drop-down lists (`select`),
+  switches, sidebar entries, keycap views, the About card and its link rows.
   Bitmaps are opaque (drawn on their background color), so ClearType works.
+- **Drop-down lists and ⓘ bubbles are our own** (Windows' list is always white
+  and square, its tooltip yellowish, neither matched the window). A closed list
+  (`NewList`, kind `select`) is drawn like a button with a chevron; `.Value` is
+  the chosen item and `onChange(widget)` runs when it changes. Clicking it opens
+  `OpenSelect`: a layered popup owned by the settings window (`PopupWindow`,
+  never activated), drawn once per state with GDI+ (`PopupCard`: soft shadow,
+  rounded card, hairline border; hover pill, accent bar on the chosen item),
+  sliding in while it fades (150 ms). It holds the mouse capture: the captured
+  `WM_MOUSEMOVE`/`WM_LBUTTONDOWN`/`UP` go to `SelectMouse` (a click outside
+  closes it, release over an item chooses it), `WM_KEYDOWN` reaches
+  `OnSettingsKey` (arrows, Home/End, Enter/Space choose, anything else closes),
+  and `WM_CAPTURECHANGED` / `WM_ACTIVATEAPP` close it. It opens above the
+  control if there's no room below. The ⓘ bubble (`ShowInfoTip`) is the same
+  kind of popup, click-through, under the ⓘ and inside the window when it fits,
+  closed when the mouse leaves the ⓘ (`CheckInfoTip`). Both are in physical
+  pixels (PMv2 context), like the notice. Careful with names: the globals are
+  `SEL` and `TIP`, so no local `sel`/`tip` (pitfall 18).
   Icons come from *Segoe Fluent Icons* (Windows 11) or *Segoe MDL2 Assets*
   (Windows 10).
 - **Widgets and the mouse**: `WM_LBUTTONDOWN` on a widget presses it and captures
@@ -148,7 +165,7 @@ Rules:
   a real button. `WM_MOUSEMOVE` sets the hovered widget (`SetHot`), and a 50 ms
   timer (`CheckHot`) notices when the mouse left the window or a press got lost.
   `WM_SETCURSOR` reaches the window for its child controls: it returns the hand
-  cursor for enabled widgets, lists and ⓘ icons. A widget's bitmap is set with
+  cursor for enabled widgets and ⓘ icons. A widget's bitmap is set with
   `STM_SETIMAGE` directly (3x faster than `.Value`); the static control keeps its
   own copy of a bitmap with alpha, so whatever isn't in use is freed (`Draw`,
   `Free`).
@@ -163,9 +180,10 @@ Rules:
   painting with `WM_SETREDRAW`. Then `Flip()` composes the whole client area
   off-screen (`ComposeWindow`: the background bitmap, then each visible control
   printed with `WM_PRINT` into a bitmap of its own and copied to its place),
-  turns painting back on, copies the image in one `BitBlt`, validates
-  everything so nothing repaints piece by piece, and lets the drop-down lists
-  repaint themselves (they don't print their text). Repainting control by
+  turns painting back on, copies the image in one `BitBlt` and validates
+  everything so nothing repaints piece by piece. (Windows' drop-down lists
+  didn't print their text, which needed special cases; ours are widgets.)
+  Repainting control by
   control on screen (`RedrawWindow`) let DWM show half-painted frames at 180 Hz:
   a visible "cut". `PrintWindow` isn't used: it clips to the window's current
   size.
@@ -203,20 +221,21 @@ Rules:
   Windows suggests and is painted once. Measured: ~150 ms down to ~40 ms; switching
   sections ~55 ms with flicker down to ~20 ms in one paint. A `WM_DPICHANGED` for
   the DPI the window already uses (it's created on the main monitor, then shown on
-  another) is ignored, or the window would shrink. The tray menu and the ⓘ
-  tooltips are shown with the thread temporarily in PMv2 (`PMv2()`), at physical
-  coordinates.
+  another) is ignored, or the window would shrink. The tray menu and the popups
+  (lists, ⓘ bubbles, notices) are shown with the thread temporarily in PMv2
+  (`PMv2()`), at physical coordinates.
 - **Reading positions**: a system-aware thread asking for the position of a PMv2
   window gets coordinates "virtualized" for its own DPI. Always switch to PMv2
   (`PMv2()`) before `WinGetPos`/`GetPos` on the settings window.
 - **Light/dark**: `Theme=System` reads `AppsUseLightTheme`. Dark mode uses the
-  undocumented but widely used uxtheme exports (ordinals 133
-  `AllowDarkModeForWindow`, 135 `SetPreferredAppMode`, 136 `FlushMenuThemes`) for
-  the menus and drop-down lists (`SetWindowTheme` with `DarkMode_CFD`),
-  `WM_CTLCOLORLISTBOX` for open lists, and `DwmSetWindowAttribute` 20 (dark title
-  bar) / 35 (caption color, Windows 11). Widgets use the colors in `THEMES`. When
-  the theme changes, the window is rebuilt in place.
-- Widgets are clickable but not reachable with Tab; lists and Esc work as usual.
+  undocumented but widely used uxtheme exports (ordinals 135
+  `SetPreferredAppMode`, 136 `FlushMenuThemes`) for the tray menu, and
+  `DwmSetWindowAttribute` 20 (dark title bar) / 35 (caption color, Windows 11).
+  Everything else uses the colors in `THEMES`. The light theme is a warm stone
+  grey (window `E3DED6`, cards `EDE9E2`), not white: easier on the eyes; the
+  solid notification (`GT_THEMES.solidLight`) uses the same colors. When the
+  theme changes, the window is rebuilt in place.
+- Widgets are clickable but not reachable with Tab; Esc works as usual.
 
 ## One copy at a time, restart, hidden tray icon
 
@@ -444,10 +463,13 @@ The tests cover the logic; this needs real keys:
 - [ ] Right Ctrl + NitroSense key opens NitroSense; Left Ctrl + key toggles Num Lock.
 - [ ] *Change…* captures a single key, a combo, and a lone modifier (Right Ctrl);
   Right Ctrl + Num Lock is captured as that, not as Pause.
-- [ ] *Action*: *Do nothing* / *Keep its normal behavior* hide the *Sends* row.
+- [ ] *What it does*: *Does nothing* / *Works as usual* hide the *Sends* row.
+- [ ] Drop-down lists: open under the control (above it near the bottom of the
+  screen), hover, click an item, click outside, arrows + Enter, Esc; light and
+  dark; on both monitors.
 - [ ] `Mode=Key`: holding the key repeats the target; Shift+key gives Shift+target.
 - [ ] Changes apply at once without restarting; incomplete ones (no key to send) show a red hint.
-- [ ] Every section of the settings window; changes apply at once; the ⓘ tooltips.
+- [ ] Every section of the settings window; changes apply at once; the ⓘ bubbles.
 - [ ] Switching sections doesn't flicker; the accent bar grows in.
 - [ ] Hover and press: buttons sink onto their lip, switches slide, the hand cursor
   shows over everything clickable; releasing outside a button does nothing.

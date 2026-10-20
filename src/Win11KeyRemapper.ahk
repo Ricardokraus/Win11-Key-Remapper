@@ -53,7 +53,8 @@ INSTANCE_MSG := DllCall("RegisterWindowMessage", "str", "Win11KeyRemapper.ShowSe
 REPEAT_MS := 1500
 
 MODES       := ["Key", "Disable", "None"]
-MODE_LABELS := ["Press another key or shortcut", "Do nothing (disable the key)", "Keep its normal behavior"]
+; Worded as states, not commands: "Press another key" read like a button
+MODE_LABELS := ["Works as another key or shortcut", "Does nothing (disabled)", "Works as usual (not remapped)"]
 ACTION_INFO := Map("Key", "Presses the key below instead. Num, Caps and Scroll Lock toggle once while held."
                  , "Disable", "The key does nothing at all."
                  , "None", "The key works as it normally would. The shortcut below still works.")
@@ -86,15 +87,16 @@ SWITCH_LABELS := Map("remapping", "Remapping", "autostart", "Start with Windows"
 ; Settings window colors (RGB). "dim" is used for disabled rows; nav* are
 ; sidebar entries, row* the clickable rows on a card, btn* the buttons (the
 ; lip is the darker edge under a button, gone while it's pressed).
-THEMES := Map("light", {dark: false, win: 0xF3F3F3, card: 0xFFFFFF, border: 0xE3E3E3
-                      , navSel: 0xE6E6E6, navHover: 0xEBEBEB, navPress: 0xE0E0E0
-                      , rowHover: 0xF5F5F5, rowPress: 0xEEEEEE
-                      , text: 0x1A1A1A, sub: 0x616161, dim: 0xA8A8A8
-                      , on: 0x1E9E48, knobOn: 0xFFFFFF, off: 0x8A8A8A, knobOff: 0x616161
-                      , keyFace: 0xFAFAFA, keyEdge: 0xCFCFCF, keyShade: 0xC9C9C9, keyText: 0x1A1A1A
-                      , btnFace: 0xFDFDFD, btnHover: 0xF4F4F4, btnEdge: 0xD5D5D5, btnLip: 0xC2C2C2
-                      , danger: 0xC42B1C, dangerFill: 0xC42B1C, dangerLip: 0x8A1E14, onDanger: 0xFFFFFF
-                      , accent: 0x1E9E48, accentLip: 0x146B31, onAccent: 0xFFFFFF, ok: 0x13803A, warn: 0xC42B1C}
+; The light theme is a warm stone grey, not white: easier on the eyes.
+THEMES := Map("light", {dark: false, win: 0xE3DED6, card: 0xEDE9E2, border: 0xD3CDC3
+                      , navSel: 0xD6D0C6, navHover: 0xDCD7CF, navPress: 0xCFC9BF
+                      , rowHover: 0xE5E0D8, rowPress: 0xDDD8D0
+                      , text: 0x26231F, sub: 0x5E5850, dim: 0xA39C92
+                      , on: 0x1E9E48, knobOn: 0xF7F4EF, off: 0x857E74, knobOff: 0x5E5850
+                      , keyFace: 0xF2EFEA, keyEdge: 0xC4BDB2, keyShade: 0xBAB3A8, keyText: 0x26231F
+                      , btnFace: 0xF2EFEA, btnHover: 0xE9E5DE, btnEdge: 0xC9C2B8, btnLip: 0xB3ACA1
+                      , danger: 0xB42318, dangerFill: 0xC42B1C, dangerLip: 0x8A1E14, onDanger: 0xFFFFFF
+                      , accent: 0x1E9E48, accentLip: 0x146B31, onAccent: 0xFFFFFF, ok: 0x13803A, warn: 0xB42318}
             , "dark", {dark: true, win: 0x202020, card: 0x2B2B2B, border: 0x3A3A3A
                       , navSel: 0x2D2D2D, navHover: 0x292929, navPress: 0x262626
                       , rowHover: 0x323232, rowPress: 0x2F2F2F
@@ -241,6 +243,8 @@ HOOK := {proc: 0, h: 0}
 NS := {checked: false, target: "", label: ""}   ; NitroSense auto-detection cache
 UI := {gui: 0}
 NT := {gui: 0, hwnd: 0, phase: "", last: ""}   ; the notice inside the settings window
+SEL := {wd: 0, gui: 0, hwnd: 0, fading: 0}     ; the open drop-down list (OpenSelect)
+TIP := {gui: 0, hwnd: 0}                        ; the ⓘ bubble
 ; Settings window layout, in logical pixels
 SL := {W: 820, H: 630, side: 220, cx: 236, cw: 560, rx: 780, kvX: 426, btnX: 684}
 ; Update check: state "" | checking | latest | available | error
@@ -1522,8 +1526,11 @@ BuildSettings(page, posX := "", posY := "") {
     static hooked := false
     if !hooked {
         OnMessage(0x14, OnSettingsErase)            ; WM_ERASEBKGND: paint the cards
-        OnMessage(0x134, OnSettingsCtlColorList)    ; WM_CTLCOLORLISTBOX: dark drop-down lists
         OnMessage(0x2E0, OnSettingsDpiChanged)      ; WM_DPICHANGED: moved to another monitor
+        OnMessage(0x100, OnSettingsKey)             ; WM_KEYDOWN: an open drop-down list
+        OnMessage(0x104, OnSettingsKey)             ; WM_SYSKEYDOWN (Alt): closes it
+        OnMessage(0x215, OnSelectCaptureLost)       ; WM_CAPTURECHANGED
+        OnMessage(0x1C, OnSettingsActivateApp)      ; WM_ACTIVATEAPP: another app: close popups
         OnMessage(0x20, OnSettingsSetCursor)        ; WM_SETCURSOR: hand over what can be clicked
         OnMessage(0x200, OnSettingsMouseMove)       ; WM_MOUSEMOVE: hover, ⓘ tooltips
         OnMessage(0x201, OnSettingsMouseDown)       ; WM_LBUTTONDOWN
@@ -1553,7 +1560,6 @@ BuildSettings(page, posX := "", posY := "") {
     UI.widgets := Map(), UI.anims := Map(), UI.hot := 0, UI.frozen := 0, UI.paintOff := false
     UI.pendingDpi := 0, UI.dpiShot := 0, UI.sizing := false, UI.stretchHidden := []
     UI.kvW := SL.btnX - 10 - SL.kvX
-    UI.brushCard := DllCall("CreateSolidBrush", "uint", Bgr(th.card), "ptr")
     for p in PAGES
         UI.groups[p[1]] := [], UI.laidOut[p[1]] := UI.dpi
     UI.laidOut[""] := UI.dpi
@@ -1629,7 +1635,7 @@ BuildKeysPage() {
     UI.srcBtn := NewButton("keys", SL.btnX, y + 16, 96, "Change…")
     UI.srcBtn.OnEvent("Click", (*) => CaptureToggle("source"))
     y := Row(grp, 92)
-    RowText("keys", y, 92, "Action", "", SL.kvX - 10 - x, "", 17)
+    RowText("keys", y, 92, "What it does", "", SL.kvX - 10 - x, "", 17)
     UI.mode := NewList("keys", SL.kvX, y + 13, SL.rx - SL.kvX, MODE_LABELS, OnModeChange)
     UI.actionInfo := Place("Text", "keys", x, y + 54, SL.rx - x, 20, "0x80 Background" Hex6(th.card), "", 9, "w400", th.sub)
     first := UI.items.Length + 1
@@ -1907,12 +1913,12 @@ NewWidget(kind, page, x, y, w, h, props := "") {
 ; variant: "" (normal), "danger" (red, like GitHub's danger zone), "accent" (green)
 NewButton(page, x, y, w, text, variant := "") => NewWidget("button", page, x, y, w, 32, {_text: text, variant: variant})
 
+; A drop-down list of our own (Windows' is always white and square): drawn
+; like the buttons, with a chevron; clicking it opens the list (OpenSelect).
+; .Value is the chosen item (1-based); onChange(widget) runs when it changes.
 NewList(page, x, y, w, items, onChange) {
-    ddl := Place("DropDownList", page, x, y, w, "", "AltSubmit", items, 10, "w400", UI.th.text)
-    ThemeCtl(ddl)
-    ddl.OnEvent("Change", onChange)
-    UI.hand[ddl.Hwnd] := true
-    return ddl
+    return NewWidget("select", page, x, y - 1, w, 32, {items: items, _value: 1, onChange: onChange})
+        .OnEvent("Click", OpenSelect)
 }
 
 ; The keys of a shortcut drawn as keycaps; click = same as "Change…"
@@ -1934,17 +1940,27 @@ class UiWidget {
         this.ctl := ctl, this.kind := kind, this.lw := lw, this.lh := lh
         this._text := "", this._enabled := true, this.variant := "", this.on := "", this.pos := 0
         this.hover := false, this.press := false, this.dirty := true, this.onClick := 0
+        this.items := [], this._value := 0, this.open := false
         if IsObject(props)
             for name, value in props.OwnProps()
                 this.%name% := value
         UI.widgets[ctl.Hwnd] := this
     }
     Text {
-        get => this._text
+        get => this.kind = "select" ? (this._value ? this.items[this._value] : "") : this._text
         set {
             if (value == this._text)
                 return
             this._text := value
+            this.Draw()
+        }
+    }
+    Value {                             ; a select's chosen item, 1-based
+        get => this._value
+        set {
+            if (value = this._value)
+                return
+            this._value := value
             this.Draw()
         }
     }
@@ -2040,26 +2056,12 @@ Flip(rect := 0) {
     DllCall("DeleteObject", "ptr", hbm)
     DllCall("DeleteDC", "ptr", hdc)
     DllCall("RedrawWindow", "ptr", hwnd, "ptr", 0, "ptr", 0, "uint", 0x88)     ; validate all: nothing left to repaint piecemeal
-    for item in UI.items                    ; drop-down lists don't print their text: they paint it themselves
-        if (item.ctl.Type = "DDL" && DllCall("IsWindowVisible", "ptr", item.ctl.Hwnd))
-            DllCall("RedrawWindow", "ptr", item.ctl.Hwnd, "ptr", 0, "ptr", 0, "uint", 0x101)   ; invalidate, update now
-}
-
-PrintListText(ddl, hdc, cw, ch) {
-    font := DllCall("SendMessage", "ptr", ddl.Hwnd, "uint", 0x31, "ptr", 0, "ptr", 0, "ptr")   ; WM_GETFONT
-    old := DllCall("SelectObject", "ptr", hdc, "ptr", font, "ptr")
-    DllCall("SetBkMode", "ptr", hdc, "int", 1)                                    ; transparent
-    DllCall("SetTextColor", "ptr", hdc, "uint", Bgr(UI.th.text))
-    rc := Buffer(16), NumPut("int", Px(4), "int", 0, "int", cw - Px(28), "int", ch, rc)
-    DllCall("DrawText", "ptr", hdc, "str", ddl.Text, "int", -1, "ptr", rc, "uint", 0x8824)  ; one line, centered vertically, "…"
-    DllCall("SelectObject", "ptr", hdc, "ptr", old)
 }
 
 ; Paints the window's client area into hdc as it is laid out now: the
 ; background, then each visible control. Done by hand because PrintWindow
 ; clips to the window's current size. Each control prints into a bitmap of
-; its own, at its own origin, then is copied to its place: drop-down lists
-; clip their text in device coordinates, so with a shifted origin it vanished.
+; its own, at its own origin, then is copied to its place.
 ComposeWindow(hdc) {
     src := DllCall("CreateCompatibleDC", "ptr", hdc, "ptr")
     old := DllCall("SelectObject", "ptr", src, "ptr", UI.bgBmp, "ptr")
@@ -2075,8 +2077,6 @@ ComposeWindow(hdc) {
         bmp := DllCall("CreateCompatibleBitmap", "ptr", hdc, "int", cw, "int", ch, "ptr")
         old := DllCall("SelectObject", "ptr", src, "ptr", bmp, "ptr")
         DllCall("SendMessage", "ptr", hwnd, "uint", 0x317, "ptr", src, "ptr", 0xE)    ; WM_PRINT: client, frame, background
-        if (item.ctl.Type = "DDL")          ; a drop-down list doesn't print its text: draw it
-            PrintListText(item.ctl, src, cw, ch)
         DllCall("BitBlt", "ptr", hdc, "int", Px(item.x), "int", Px(item.y), "int", cw, "int", ch, "ptr", src, "int", 0, "int", 0, "uint", 0x00CC0020)
         DllCall("SelectObject", "ptr", src, "ptr", old)
         DllCall("DeleteObject", "ptr", bmp)
@@ -2144,27 +2144,6 @@ RenderPageBackground() {
         DllCall("DeleteObject", "ptr", UI.bgBmp)
     UI.bgW := Px(SL.W), UI.bgH := Px(SL.H)
     UI.bgBmp := RenderBackground(SL.W, SL.H, UI.groups[UI.page])
-}
-
-ShowInfoTip(hwnd) {
-    if !UI.infoTips.Has(hwnd)
-        return
-    UI.tipFor := hwnd
-    old := PMv2()
-    WinGetPos(&x, &y, &w, &h, hwnd)
-    CoordMode("ToolTip", "Screen")
-    ToolTip(UI.infoTips[hwnd], x + w + Px(4), y + h + Px(4))
-    PMv2(old)
-    SetTimer(CheckInfoTip, 250)
-}
-
-CheckInfoTip() {
-    MouseGetPos(, , , &over, 2)
-    if (over = UI.tipFor)
-        return
-    ToolTip()
-    UI.tipFor := 0
-    SetTimer(CheckInfoTip, 0)
 }
 
 ; Moved to a monitor with another scale. Laying everything out again takes
@@ -2424,6 +2403,327 @@ NoticeFree() {
     NT.gui := 0, NT.hwnd := 0, NT.phase := ""
 }
 
+; ---- Popups: drop-down lists and ⓘ bubbles -------------------------------------
+; Windows' own (a white, square list; a yellowish tooltip) didn't match the
+; window, so both are drawn here like the notice: a layered window owned by
+; the settings window, painted with GDI+ (rounded card, soft shadow, the
+; theme's colors) and shown without taking the focus. Coordinates are
+; physical pixels (Per-Monitor v2 context), like the notice's.
+
+PopupWindow(clickThrough := false) {    ; layered, no taskbar button, never activated
+    gw := Gui("-Caption +ToolWindow +E0x80000 +E0x08000000" (clickThrough ? " +E0x20" : "") " +Owner" UI.gui.Hwnd)
+    gw.Show("NA x-32000 y-32000 w1 h1")
+    return gw
+}
+
+PopupCanvas(w, h) {                     ; a 32-bit canvas with alpha, for UpdateLayeredWindow
+    bi := Buffer(40, 0)
+    NumPut("uint", 40, bi, 0), NumPut("int", w, bi, 4), NumPut("int", -h, bi, 8)
+    NumPut("ushort", 1, bi, 12), NumPut("ushort", 32, bi, 14)
+    hdc := DllCall("CreateCompatibleDC", "ptr", 0, "ptr"), bits := 0
+    hbm := DllCall("CreateDIBSection", "ptr", hdc, "ptr", bi, "uint", 0, "ptr*", &bits, "ptr", 0, "uint", 0, "ptr")
+    obm := DllCall("SelectObject", "ptr", hdc, "ptr", hbm, "ptr")
+    g := 0
+    DllCall("gdiplus\GdipCreateFromHDC", "ptr", hdc, "ptr*", &g)
+    GT_Quality(g)
+    return {hdc: hdc, hbm: hbm, obm: obm, g: g, w: w, h: h}
+}
+
+PopupPush(hwnd, pc, x, y, alpha) {      ; shows the canvas on the window, then frees it
+    DllCall("gdiplus\GdipDeleteGraphics", "ptr", pc.g)
+    pos := Buffer(8), NumPut("int", Round(x), "int", Round(y), pos)
+    sz := Buffer(8), NumPut("int", pc.w, "int", pc.h, sz)
+    src := Buffer(8, 0)
+    DllCall("UpdateLayeredWindow", "ptr", hwnd, "ptr", 0, "ptr", pos, "ptr", sz, "ptr", pc.hdc, "ptr", src
+          , "uint", 0, "uint*", (Max(0, Min(255, Round(alpha))) << 16) | (1 << 24), "uint", 2)
+    DllCall("SelectObject", "ptr", pc.hdc, "ptr", pc.obm)
+    DllCall("DeleteObject", "ptr", pc.hbm)
+    DllCall("DeleteDC", "ptr", pc.hdc)
+}
+
+PopupMove(hwnd, x, y, alpha) {          ; no bitmap: only the position and the fade
+    pt := Buffer(8), NumPut("int", Round(x), "int", Round(y), pt)
+    DllCall("UpdateLayeredWindow", "ptr", hwnd, "ptr", 0, "ptr", pt, "ptr", 0, "ptr", 0, "ptr", 0
+          , "uint", 0, "uint*", (Max(0, Min(255, Round(alpha))) << 16) | (1 << 24), "uint", 2)
+}
+
+PopupCard(g, x, y, w, h, r) {           ; soft shadow, card, hairline border
+    th := UI.th, k := UI.k
+    loop 4
+        FillPathFree(g, GT_RoundPath(x - A_Index * k, y - A_Index * k + 2 * k, w + 2 * A_Index * k, h + 2 * A_Index * k
+                   , r + A_Index * k), Argb(0x000000, th.dark ? 0x1C : 0x10))
+    FillPathFree(g, GT_RoundPath(x, y, w, h, r), Argb(th.btnFace))
+    StrokePathFree(g, GT_RoundPath(x + 0.5, y + 0.5, w - 1, h - 1, r - 0.5), Argb(th.border), 1)
+}
+
+WorkAreaAt(hwnd) {                      ; the work area of the monitor showing hwnd, physical pixels
+    mi := Buffer(40, 0), NumPut("uint", 40, mi)
+    DllCall("GetMonitorInfo", "ptr", DllCall("MonitorFromWindow", "ptr", hwnd, "uint", 2, "ptr"), "ptr", mi)
+    return {l: NumGet(mi, 20, "int"), t: NumGet(mi, 24, "int"), r: NumGet(mi, 28, "int"), b: NumGet(mi, 32, "int")}
+}
+
+; ---- Drop-down list --------------------------------------------------------------
+; Opens under the widget (above it if there's no room), slides in a little
+; while fading in, and holds the mouse capture: a click outside closes it,
+; as in Windows 11. Arrow keys, Enter and Esc work too.
+
+OpenSelect(wd, *) {
+    if SEL.wd {
+        same := SEL.wd = wd
+        CloseSelect()
+        if same                             ; clicked the open one: just close it
+            return
+    }
+    if (!UI.gui || !wd._enabled || !DllCall("IsWindowVisible", "ptr", UI.gui.Hwnd))
+        return
+    old := PMv2()
+    k := UI.k, rc := Buffer(16)
+    DllCall("GetWindowRect", "ptr", wd.Hwnd, "ptr", rc)
+    wl := NumGet(rc, 0, "int"), wt := NumGet(rc, 4, "int"), wr := NumGet(rc, 8, "int"), wb := NumGet(rc, 12, "int")
+    font := GT_Font(FontFamily("Segoe UI"), 13.33 * k, 0), fmt := NewFormat(0)
+    mb := GT_Bitmap(1, 1), mg := GT_BmpGraphics(mb), textW := 0
+    for item in wd.items
+        textW := Max(textW, GT_MeasureW(mg, item, font, fmt))
+    DllCall("gdiplus\GdipDeleteGraphics", "ptr", mg), DllCall("gdiplus\GdipDisposeImage", "ptr", mb)
+    FreeAll([font], [fmt])
+    SEL.pad := Round(12 * k), SEL.inset := Round(4 * k), SEL.itemH := Round(36 * k)
+    SEL.w := Max(wr - wl, Round(textW + 56 * k)), SEL.h := wd.items.Length * SEL.itemH + 2 * SEL.inset
+    wa := WorkAreaAt(wd.Hwnd)
+    SEL.x := Min(wl, wa.r - SEL.w), SEL.y := wb + Round(4 * k), SEL.above := false
+    if (SEL.y + SEL.h > wa.b)
+        SEL.y := wt - Round(4 * k) - SEL.h, SEL.above := true
+    if SEL.fading {                         ; the previous one, still fading out
+        try SEL.fading.Destroy()
+        SEL.fading := 0
+    }
+    SEL.wd := wd, SEL.hot := wd._value, SEL.down := 0
+    SEL.gui := PopupWindow(), SEL.hwnd := SEL.gui.Hwnd
+    SEL.ms := AnimationsOn() ? 150 : 0, SEL.t0 := A_TickCount, SEL.phase := "in"
+    SEL.alpha := SEL.ms ? 0 : 255, SEL.dy := SEL.ms ? Round(6 * k) * (SEL.above ? 1 : -1) : 0
+    SelectDraw()
+    PMv2(old)
+    wd.open := true, wd.Draw()
+    DllCall("SetCapture", "ptr", SEL.hwnd)
+    if SEL.ms
+        SetTimer(SelectStep, 10)
+    Log("Drop-down list opened (" wd.items.Length " items)")
+}
+
+SelectDraw() {
+    th := UI.th, k := UI.k, p := SEL.pad, inset := SEL.inset, ih := SEL.itemH
+    pc := PopupCanvas(SEL.w + 2 * p, SEL.h + 2 * p), g := pc.g
+    PopupCard(g, p, p, SEL.w, SEL.h, 8 * k)
+    font := GT_Font(FontFamily("Segoe UI"), 13.33 * k, 0), fmt := NewFormat(0)
+    DllCall("gdiplus\GdipSetStringFormatTrimming", "ptr", fmt, "int", 3)
+    for i, item in SEL.wd.items {
+        y := p + inset + (i - 1) * ih
+        chosen := i = SEL.wd._value, hot := i = SEL.hot
+        if (hot || chosen)
+            FillPathFree(g, GT_RoundPath(p + inset, y + 1 * k, SEL.w - 2 * inset, ih - 2 * k, 5 * k)
+                       , Argb(hot && SEL.down = i ? th.navPress : hot ? th.navHover : th.navSel))
+        if chosen                           ; the accent bar, like the sidebar's
+            FillPathFree(g, GT_RoundPath(p + inset + 3 * k, y + (ih - 16 * k) / 2, 3 * k, 16 * k, 1.5 * k), Argb(th.accent))
+        GT_Text(g, item, font, Argb(th.text), p + inset + 14 * k, y, SEL.w - 2 * inset - 22 * k, ih, fmt)
+    }
+    FreeAll([font], [fmt])
+    PopupPush(SEL.hwnd, pc, SEL.x - p, SEL.y - p + SEL.dy, SEL.alpha)
+}
+
+SelectStep() {
+    Critical
+    if (SEL.phase = "in" && SEL.wd) {
+        q := Min((A_TickCount - SEL.t0) / SEL.ms, 1), e := GT_EaseOutCubic(q)
+        SEL.alpha := 255 * e, SEL.dy := Round(6 * UI.k) * (SEL.above ? 1 : -1) * (1 - e)
+        old := PMv2()
+        PopupMove(SEL.hwnd, SEL.x - SEL.pad, SEL.y - SEL.pad + SEL.dy, SEL.alpha)
+        PMv2(old)
+        if (q >= 1)
+            SEL.phase := "", SetTimer(SelectStep, 0)
+    } else if (SEL.phase = "out" && SEL.fading) {
+        q := Min((A_TickCount - SEL.t0) / 100, 1)
+        old := PMv2()
+        PopupMove(SEL.fading.Hwnd, SEL.fx, SEL.fy, SEL.falpha * (1 - q))
+        PMv2(old)
+        if (q >= 1) {
+            try SEL.fading.Destroy()
+            SEL.fading := 0, SEL.phase := ""
+            SetTimer(SelectStep, 0)
+        }
+    } else
+        SetTimer(SelectStep, 0)
+}
+
+; The item at window coordinates x, y (0 = none)
+SelectItemAt(x, y) {
+    cx := x - SEL.pad, cy := y - SEL.pad - SEL.inset
+    if (cx < 0 || cx >= SEL.w || cy < 0)
+        return 0
+    i := cy // SEL.itemH + 1
+    return i <= SEL.wd.items.Length ? i : 0
+}
+
+SelectMouse(msg, lParam) {
+    static hand := DllCall("LoadCursor", "ptr", 0, "ptr", 32649, "ptr"), arrow := DllCall("LoadCursor", "ptr", 0, "ptr", 32512, "ptr")
+    i := SelectItemAt(lParam << 48 >> 48, lParam << 32 >> 48)  ; signed: the capture also reports outside
+    DllCall("SetCursor", "ptr", i ? hand : arrow)
+    switch msg {
+        case 0x200:                         ; move: hover
+            if (i && i != SEL.hot)
+                SEL.hot := i, SelectRedraw()
+        case 0x201, 0x203:                  ; press: outside closes, inside marks the item
+            if !i
+                return (CloseSelect(), 0)
+            SEL.down := i, SEL.hot := i, SelectRedraw()
+        case 0x202:                         ; release over the pressed item: chosen
+            if (i && i = SEL.down)
+                return (ChooseSelect(i), 0)
+            SEL.down := 0, SelectRedraw()
+    }
+    return 0
+}
+
+SelectRedraw() {
+    old := PMv2()
+    SelectDraw()
+    PMv2(old)
+}
+
+ChooseSelect(i) {
+    wd := SEL.wd
+    if !wd
+        return
+    changed := i != wd._value
+    CloseSelect()
+    if !changed
+        return
+    wd.Value := i
+    if wd.onChange
+        SetTimer(wd.onChange.Bind(wd), -1)  ; not inside the message handler
+}
+
+CloseSelect(fade := true) {
+    if !SEL.wd
+        return
+    wd := SEL.wd
+    SEL.wd := 0                             ; first: releasing the capture reports back here
+    if (DllCall("GetCapture", "ptr") = SEL.hwnd)
+        DllCall("ReleaseCapture")
+    SetTimer(SelectStep, 0)
+    if SEL.fading {
+        try SEL.fading.Destroy()
+        SEL.fading := 0
+    }
+    if (fade && AnimationsOn() && SEL.alpha > 0) {
+        SEL.fading := SEL.gui, SEL.fx := SEL.x - SEL.pad, SEL.fy := SEL.y - SEL.pad + SEL.dy, SEL.falpha := SEL.alpha
+        SEL.phase := "out", SEL.t0 := A_TickCount
+        SetTimer(SelectStep, 10)
+    } else
+        try SEL.gui.Destroy()
+    SEL.gui := 0, SEL.hwnd := 0
+    if UI.gui {
+        wd.open := false, wd.press := false, wd.hover := false
+        wd.Draw()
+    }
+}
+
+OnSelectCaptureLost(wParam, lParam, msg, hwnd) {
+    if (SEL.wd && hwnd = SEL.hwnd)          ; e.g. a window of another app came up
+        CloseSelect(false)
+}
+
+OnSettingsKey(wParam, lParam, msg, hwnd) {
+    if !SEL.wd
+        return
+    n := SEL.wd.items.Length
+    switch wParam {
+        case 0x26, 0x28:                    ; Up, Down
+            SEL.hot := Max(1, Min(n, SEL.hot + (wParam = 0x28 ? 1 : -1))), SelectRedraw()
+        case 0x24, 0x23:                    ; Home, End
+            SEL.hot := wParam = 0x24 ? 1 : n, SelectRedraw()
+        case 0x0D, 0x20:                    ; Enter, Space
+            ChooseSelect(SEL.hot)
+        default:                            ; Esc, Alt, Tab…: close
+            CloseSelect()
+    }
+    return 0
+}
+
+OnSettingsActivateApp(wParam, lParam, msg, hwnd) {
+    if (!wParam && UI.gui && hwnd = UI.gui.Hwnd) {     ; switched to another app
+        CloseSelect(false)
+        TipFree()
+    }
+}
+
+; ---- ⓘ bubble --------------------------------------------------------------------
+; Under the ⓘ, while the mouse is on it (CheckInfoTip). Click-through.
+
+ShowInfoTip(hwnd) {
+    if (!UI.infoTips.Has(hwnd) || !UI.gui)
+        return
+    TipFree()
+    UI.tipFor := hwnd
+    old := PMv2()
+    th := UI.th, k := UI.k, pad := Round(10 * k), lineH := Round(19 * k)
+    lines := StrSplit(UI.infoTips[hwnd], "`n")
+    font := GT_Font(FontFamily("Segoe UI"), 12.5 * k, 0), fmt := NewFormat(0)
+    mb := GT_Bitmap(1, 1), mg := GT_BmpGraphics(mb), textW := 0
+    for line in lines
+        textW := Max(textW, line = "" ? 0 : GT_MeasureW(mg, line, font, fmt))
+    DllCall("gdiplus\GdipDeleteGraphics", "ptr", mg), DllCall("gdiplus\GdipDisposeImage", "ptr", mb)
+    w := Round(textW + 26 * k), h := lines.Length * lineH + Round(16 * k)
+    pc := PopupCanvas(w + 2 * pad, h + 2 * pad), g := pc.g
+    PopupCard(g, pad, pad, w, h, 6 * k)
+    for i, line in lines
+        if (line != "")
+            GT_Text(g, line, font, Argb(th.text), pad + 13 * k, pad + 8 * k + (i - 1) * lineH, w - 20 * k, lineH, fmt)
+    FreeAll([font], [fmt])
+    rc := Buffer(16)
+    DllCall("GetWindowRect", "ptr", hwnd, "ptr", rc)
+    wa := WorkAreaAt(hwnd), wr := Buffer(16)
+    DllCall("GetWindowRect", "ptr", UI.gui.Hwnd, "ptr", wr)     ; inside the window if it fits
+    right := Min(wa.r, NumGet(wr, 8, "int") - Round(12 * k))
+    x := Max(wa.l, Min(NumGet(rc, 0, "int") - Round(8 * k), right - w)) - pad
+    y := NumGet(rc, 12, "int") + Round(6 * k) - pad
+    if (y + pad + h > wa.b)                 ; no room below: above the ⓘ
+        y := NumGet(rc, 4, "int") - Round(6 * k) - h - pad
+    TIP.gui := PopupWindow(true), TIP.hwnd := TIP.gui.Hwnd
+    TIP.x := x, TIP.y := y, TIP.t0 := A_TickCount, TIP.ms := AnimationsOn() ? 120 : 0
+    PopupPush(TIP.hwnd, pc, x, y, TIP.ms ? 0 : 255)
+    PMv2(old)
+    if TIP.ms
+        SetTimer(TipStep, 10)
+    SetTimer(CheckInfoTip, 150)
+}
+
+TipStep() {
+    if !TIP.hwnd
+        return SetTimer(TipStep, 0)
+    q := Min((A_TickCount - TIP.t0) / TIP.ms, 1)
+    old := PMv2()
+    PopupMove(TIP.hwnd, TIP.x, TIP.y, 255 * GT_EaseOutCubic(q))
+    PMv2(old)
+    if (q >= 1)
+        SetTimer(TipStep, 0)
+}
+
+CheckInfoTip() {
+    MouseGetPos(, , , &over, 2)
+    if (over = UI.tipFor && UI.gui)
+        return
+    TipFree()
+}
+
+TipFree() {
+    SetTimer(TipStep, 0), SetTimer(CheckInfoTip, 0)
+    if TIP.gui {
+        try TIP.gui.Destroy()
+    }
+    TIP.gui := 0, TIP.hwnd := 0
+    if UI.gui
+        UI.tipFor := 0
+}
+
 ApplyLayout() {
     old := PMv2()
     Freeze(true)
@@ -2453,6 +2753,8 @@ OnSettingsSetCursor(wParam, lParam, msg, hwnd) {
 OnSettingsMouseMove(wParam, lParam, msg, hwnd) {
     if !UI.gui
         return
+    if (SEL.wd && hwnd = SEL.hwnd)          ; an open drop-down list has the mouse
+        return SelectMouse(msg, lParam)
     if (UI.infoTips.Has(hwnd) && UI.tipFor != hwnd)
         ShowInfoTip(hwnd)
     if !UI.widgets.Has(hwnd) {
@@ -2470,6 +2772,8 @@ OnSettingsMouseMove(wParam, lParam, msg, hwnd) {
 }
 
 OnSettingsMouseDown(wParam, lParam, msg, hwnd) {
+    if (SEL.wd && hwnd = SEL.hwnd)
+        return SelectMouse(msg, lParam)
     if (!UI.gui || !UI.widgets.Has(hwnd))
         return
     wd := UI.widgets[hwnd]
@@ -2482,6 +2786,8 @@ OnSettingsMouseDown(wParam, lParam, msg, hwnd) {
 }
 
 OnSettingsMouseUp(wParam, lParam, msg, hwnd) {
+    if (SEL.wd && hwnd = SEL.hwnd)
+        return SelectMouse(msg, lParam)
     if (!UI.gui || !UI.widgets.Has(hwnd))
         return
     wd := UI.widgets[hwnd]
@@ -2803,7 +3109,7 @@ OnModeChange(ctl, *) {
     DRAFT.mode := MODES[ctl.Value]
     if (CAP.active && CAP.target = "target" && DRAFT.mode != "Key")
         CaptureCancel()
-    CommitDraft("Action: " MODE_LABELS[ctl.Value])
+    CommitDraft("The key: " MODE_LABELS[ctl.Value])
 }
 
 OnThemeChange(ctl, *) {
@@ -2889,8 +3195,13 @@ DestroySettings() {
     if !UI.gui
         return
     Log("Settings window closed")
-    ToolTip()
-    for fn in [CheckInfoTip, CheckHot, AnimTick, ApplyPendingDpi]
+    CloseSelect(false)
+    if SEL.fading {
+        try SEL.fading.Destroy()
+        SEL.fading := 0
+    }
+    TipFree()
+    for fn in [CheckInfoTip, CheckHot, AnimTick, ApplyPendingDpi, SelectStep]
         SetTimer(fn, 0)
     FreeDpiShot()
     UI.pendingDpi := 0
@@ -2902,9 +3213,8 @@ DestroySettings() {
         wd.Free()
     UI.widgets := Map(), UI.anims := Map()
     g.Destroy()
-    for handle in [UI.brushCard, UI.bgBmp]
-        if handle
-            DllCall("DeleteObject", "ptr", handle)
+    if UI.bgBmp
+        DllCall("DeleteObject", "ptr", UI.bgBmp)
     UI.bgBmp := 0
     if UI.cardIcon
         DllCall("DestroyIcon", "ptr", UI.cardIcon), UI.cardIcon := 0
@@ -2953,12 +3263,6 @@ UxOrdinal(n) {
     return DllCall("GetProcAddress", "ptr", ux, "ptr", n, "ptr")
 }
 
-ThemeCtl(ctl) {                         ; drop-down lists in dark mode
-    dark := UI.th.dark
-    try DllCall(UxOrdinal(133), "ptr", ctl.Hwnd, "int", dark)                      ; AllowDarkModeForWindow
-    DllCall("uxtheme\SetWindowTheme", "ptr", ctl.Hwnd, "str", dark ? "DarkMode_CFD" : "Explorer", "ptr", 0)
-}
-
 ThemeTitleBar(hwnd) {
     static dwm := DllCall("LoadLibrary", "str", "dwmapi", "ptr")
     v := Buffer(4)
@@ -3000,14 +3304,6 @@ OnSettingsErase(wParam, lParam, msg, hwnd) {
     DllCall("SelectObject", "ptr", hdc, "ptr", old)
     DllCall("DeleteDC", "ptr", hdc)
     return 1
-}
-
-OnSettingsCtlColorList(wParam, lParam, msg, hwnd) {
-    if (!UI.gui || hwnd != UI.gui.Hwnd || !UI.th.dark)
-        return
-    DllCall("SetTextColor", "ptr", wParam, "uint", Bgr(UI.th.text))
-    DllCall("SetBkColor", "ptr", wParam, "uint", Bgr(UI.th.card))
-    return UI.brushCard
 }
 
 ; ---- Drawing (GDI+, reusing the toast library's helpers) --------------------
@@ -3113,6 +3409,7 @@ RenderBackground(wL, hL, groups) {
 RenderWidget(wd) {
     switch wd.kind {
         case "button": return RenderButton(wd)
+        case "select": return RenderSelect(wd)
         case "switch": return RenderSwitch(wd)
         case "nav":    return RenderNav(wd)
         case "link":   return RenderLink(wd)
@@ -3149,6 +3446,30 @@ RenderButton(wd) {
     return CanvasDone(cv, th.card)
 }
 
+; A closed drop-down list: a button face (with its lip) holding the chosen
+; item on the left and a chevron on the right. While its list is open it
+; stays pressed and the chevron points up.
+RenderSelect(wd) {
+    th := UI.th, k := UI.k, on := wd._enabled, hot := on && (wd.hover || wd.open)
+    cv := Canvas(wd.lw, wd.lh, th.card), g := cv.g
+    lip := Round(2 * k), fh := cv.h - lip, down := (hot && wd.press) || wd.open ? lip : 0
+    rad := 6 * k
+    if !down
+        FillPathFree(g, GT_RoundPath(0, lip, cv.w, fh, rad), Argb(on ? th.btnLip : th.btnEdge))
+    FillPathFree(g, GT_RoundPath(0, down, cv.w, fh, rad), Argb(hot ? th.btnHover : th.btnFace))
+    StrokePathFree(g, GT_RoundPath(0.5, down + 0.5, cv.w - 1, fh - 1, rad), Argb(wd.open ? th.accent : th.btnEdge), 1)
+    font := GT_Font(FontFamily("Segoe UI"), 13.33 * k, 0), fmt := NewFormat(0)
+    DllCall("gdiplus\GdipSetStringFormatTrimming", "ptr", fmt, "int", 3)       ; "…" if it doesn't fit
+    GT_Text(g, wd.Text, font, Argb(on ? th.text : th.dim), 12 * k, down, cv.w - 44 * k, fh, fmt)
+    if (famI := FontFamily(UI.iconFont)) {
+        fi := GT_Font(famI, 10 * k, 0), fmtC := NewFormat(1)
+        GT_Text(g, Chr(wd.open ? 0xE70E : 0xE70D), fi, Argb(on ? th.sub : th.dim), cv.w - 32 * k, down, 22 * k, fh, fmtC)
+        FreeAll([fi], [fmtC])               ; ChevronUp / ChevronDown
+    }
+    FreeAll([font], [fmt])
+    return CanvasDone(cv, th.card)
+}
+
 ; Windows 11 style on/off switch. pos: 0 = off, 1 = on, in between (and a bit
 ; beyond, the overshoot) while it slides. The knob grows on hover and
 ; stretches while pressed.
@@ -3172,18 +3493,18 @@ RenderSwitch(wd) {
 ; A sidebar entry: icon glyph and label. Hover and pressed get a pill; the
 ; selected one too, with an accent bar that grows in (pos).
 RenderNav(wd) {
-    th := UI.th, k := UI.k, sel := wd.page = UI.page
+    th := UI.th, k := UI.k, current := wd.page = UI.page    ; (not "sel": that's SEL, the open list)
     cv := Canvas(wd.lw, wd.lh, th.win), g := cv.g
-    pill := wd.press && wd.hover ? th.navPress : sel ? th.navSel : wd.hover ? th.navHover : 0
+    pill := wd.press && wd.hover ? th.navPress : current ? th.navSel : wd.hover ? th.navHover : 0
     if pill
         FillPathFree(g, GT_RoundPath(0, 0, cv.w, cv.h, 5 * k), Argb(pill))
-    if (sel && (bh := 16 * k * Max(0, wd.pos)) >= 1)
+    if (current && (bh := 16 * k * Max(0, wd.pos)) >= 1)
         FillPathFree(g, GT_RoundPath(0, (cv.h - bh) / 2, 3 * k, bh, 1.5 * k), Argb(th.accent))
     fmt := NewFormat(0)
     fi := FontFamily(UI.iconFont) ? GT_Font(FontFamily(UI.iconFont), 15 * k, 0) : 0
     if fi
         GT_Text(g, Chr(wd.glyph), fi, Argb(th.text), 14 * k, 0, 24 * k, cv.h, fmt)
-    ft := GT_Font(FontFamily("Segoe UI"), 13.5 * k, sel ? 1 : 0)
+    ft := GT_Font(FontFamily("Segoe UI"), 13.5 * k, current ? 1 : 0)
     GT_Text(g, wd.label, ft, Argb(th.text), 46 * k, 0, cv.w - 50 * k, cv.h, fmt)
     FreeAll([fi, ft], [fmt])
     return CanvasDone(cv, th.win)
