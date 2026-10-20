@@ -87,16 +87,17 @@ SWITCH_LABELS := Map("remapping", "Remapping", "autostart", "Start with Windows"
 ; Settings window colors (RGB). "dim" is used for disabled rows; nav* are
 ; sidebar entries, row* the clickable rows on a card, btn* the buttons (the
 ; lip is the darker edge under a button, gone while it's pressed).
-; The light theme is a warm stone grey, not white: easier on the eyes.
-THEMES := Map("light", {dark: false, win: 0xE3DED6, card: 0xEDE9E2, border: 0xD3CDC3
-                      , navSel: 0xD6D0C6, navHover: 0xDCD7CF, navPress: 0xCFC9BF
-                      , rowHover: 0xE5E0D8, rowPress: 0xDDD8D0
-                      , text: 0x26231F, sub: 0x5E5850, dim: 0xA39C92
-                      , on: 0x1E9E48, knobOn: 0xF7F4EF, off: 0x857E74, knobOff: 0x5E5850
-                      , keyFace: 0xF2EFEA, keyEdge: 0xC4BDB2, keyShade: 0xBAB3A8, keyText: 0x26231F
-                      , btnFace: 0xF2EFEA, btnHover: 0xE9E5DE, btnEdge: 0xC9C2B8, btnLip: 0xB3ACA1
-                      , danger: 0xB42318, dangerFill: 0xC42B1C, dangerLip: 0x8A1E14, onDanger: 0xFFFFFF
-                      , accent: 0x1E9E48, accentLip: 0x146B31, onAccent: 0xFFFFFF, ok: 0x13803A, warn: 0xB42318}
+; The light theme is a mid grey with a hint of blue, not white: easier on the
+; eyes, and the green stands out on it without glaring.
+THEMES := Map("light", {dark: false, win: 0xC8CDD3, card: 0xD5D9DE, border: 0xB8BEC6
+                      , navSel: 0xB9BFC7, navHover: 0xC0C5CC, navPress: 0xB1B7BF
+                      , rowHover: 0xCDD1D7, rowPress: 0xC4C9CF
+                      , text: 0x1A1D21, sub: 0x464C54, dim: 0x868D96
+                      , on: 0x17883D, knobOn: 0xEEF1F4, off: 0x6E757E, knobOff: 0x4A5058
+                      , keyFace: 0xDCE0E5, keyEdge: 0xABB1B9, keyShade: 0xA1A8B0, keyText: 0x1A1D21
+                      , btnFace: 0xDCE0E5, btnHover: 0xD2D6DC, btnEdge: 0xAEB4BC, btnLip: 0x99A0A9
+                      , danger: 0xA61F14, dangerFill: 0xC42B1C, dangerLip: 0x8A1E14, onDanger: 0xFFFFFF
+                      , accent: 0x17883D, accentLip: 0x116B31, onAccent: 0xFFFFFF, ok: 0x116B31, warn: 0xA61F14}
             , "dark", {dark: true, win: 0x202020, card: 0x2B2B2B, border: 0x3A3A3A
                       , navSel: 0x2D2D2D, navHover: 0x292929, navPress: 0x262626
                       , rowHover: 0x323232, rowPress: 0x2F2F2F

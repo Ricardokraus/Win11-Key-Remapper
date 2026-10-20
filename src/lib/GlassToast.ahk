@@ -48,7 +48,7 @@ GT_THEMES := {
           , outline: 0x14000000, accentIcon: 0.22, shadow: 0.55},
     ; Solid cards: same colors as the settings window
     solidDark:  {fill: 0xFF2B2B2B, edge: 0xFF3A3A3A, title: 0xFFF3F3F3, sub: 0xFFABABAB, accentIcon: 0, shadow: 1},
-    solidLight: {fill: 0xFFEDE9E2, edge: 0xFFD3CDC3, title: 0xFF26231F, sub: 0xFF5E5850, accentIcon: 0, shadow: 0.55}
+    solidLight: {fill: 0xFFD5D9DE, edge: 0xFFB8BEC6, title: 0xFF1A1D21, sub: 0xFF464C54, accentIcon: 0, shadow: 0.55}
 }
 
 GT := {phase: "", t0: 0, holdUntil: 0, holdMs: 5000, anim: "Slide"

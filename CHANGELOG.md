@@ -8,7 +8,7 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Light theme easier on the eyes**: a warm stone grey instead of white, for
+- **Light theme easier on the eyes**: a mid grey with a hint of blue instead of white, for
   the settings window, its notices and the solid notifications.
 - **Drop-down lists of our own**, instead of Windows' white, square ones: they
   look like the app's buttons, with a chevron, and open a rounded list with a

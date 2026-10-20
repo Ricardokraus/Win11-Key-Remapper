@@ -231,8 +231,8 @@ Rules:
   undocumented but widely used uxtheme exports (ordinals 135
   `SetPreferredAppMode`, 136 `FlushMenuThemes`) for the tray menu, and
   `DwmSetWindowAttribute` 20 (dark title bar) / 35 (caption color, Windows 11).
-  Everything else uses the colors in `THEMES`. The light theme is a warm stone
-  grey (window `E3DED6`, cards `EDE9E2`), not white: easier on the eyes; the
+  Everything else uses the colors in `THEMES`. The light theme is a mid grey
+  with a hint of blue (window `C8CDD3`, cards `D5D9DE`), not white: easier on the eyes; the
   solid notification (`GT_THEMES.solidLight`) uses the same colors. When the
   theme changes, the window is rebuilt in place.
 - Widgets are clickable but not reachable with Tab; Esc works as usual.
