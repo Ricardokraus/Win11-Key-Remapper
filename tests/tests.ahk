@@ -664,7 +664,7 @@ MakeFakeInstall(root)
 UninstallFiles(root, false)
 left := ""
 loop files, root "\*", "FR"
-    left .= StrReplace(A_LoopFileFullPath, root "\") " "
+    left .= StrReplace(A_LoopFilePath, root "\") " "    ; (A_LoopFilePath keeps root's form: CI's temp folder has a short 8.3 name)
 Eq(Trim(left), "Win11KeyRemapper.exe src\settings.ini", "uninstall: only the running exe (removed after exit) and the kept settings remain")
 Check(!DirExist(root "\docs") && !DirExist(root "\assets") && !DirExist(root "\src\lib"), "uninstall: empty folders removed")
 Check(!FileExist(root "\startup.lnk") && !FileExist(root "\menu.lnk"), "uninstall: shortcuts removed")
@@ -676,7 +676,7 @@ MakeFakeInstall(root)
 UninstallFiles(root, true)
 left := ""
 loop files, root "\*", "FR"
-    left .= StrReplace(A_LoopFileFullPath, root "\") " "
+    left .= StrReplace(A_LoopFilePath, root "\") " "    ; (A_LoopFilePath keeps root's form: CI's temp folder has a short 8.3 name)
 Check(Trim(left) = "Win11KeyRemapper.exe" && !DirExist(root "\src"), "uninstall: with the settings, nothing else is left  [" left "]")
 try RegDeleteKey("HKCU\Software\Win11KeyRemapperTest")
 SETTINGS_PATH := savedSettings, APP.lnk := savedLnk, UNINSTALL_LNKS := savedLnks, UNINSTALL_KEY := savedKey
