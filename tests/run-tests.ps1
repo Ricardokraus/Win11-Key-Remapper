@@ -66,6 +66,10 @@ if (-not $p.WaitForExit(90000)) {
 $p.WaitForExit()                        # without a timeout, so ExitCode gets filled in
 Get-Content $outFile -Encoding UTF8
 Get-Content $errFile -Encoding UTF8
+if ($env:GITHUB_ACTIONS) {              # annotations: readable on GitHub without signing in
+    Get-Content $outFile, $errFile -Encoding UTF8 | Where-Object { $_ -match '^(FAIL|ERROR)' -or $_ -match '\(\d+\) : ==>' } |
+        ForEach-Object { "::error title=Test::$_" }
+}
 if ($p.ExitCode -ne 0) {
     Write-Host "Tests failed (exit code $($p.ExitCode))"
     exit 1
