@@ -133,7 +133,7 @@ When there's a new version, the app tells you. Open *Settings* → *Updates* and
 click **Install**: it downloads the new version from GitHub, checks it, puts it
 in place of the old one and restarts, in a couple of seconds. Your settings stay.
 
-By hand (or from version 0.5.5 and older, which can't install updates yet):
+By hand (or from version 0.5.6 and older, which can't install updates yet):
 
 1. Click *Exit* in the app (settings → *General* → *App*, or tray icon → *Exit*).
 

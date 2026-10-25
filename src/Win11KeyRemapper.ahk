@@ -4,7 +4,7 @@ Persistent
 
 ;@Ahk2Exe-SetName Windows 11 Key Remapper
 ;@Ahk2Exe-SetDescription Windows 11 Key Remapper
-;@Ahk2Exe-SetVersion 0.5.6
+;@Ahk2Exe-SetVersion 0.5.7
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 Ricardo - MIT License
 ;@Ahk2Exe-SetOrigFilename Win11KeyRemapper.exe
 ;@Ahk2Exe-SetMainIcon ..\assets\icon.ico
@@ -32,7 +32,7 @@ Persistent
 
 #Include %A_ScriptDir%\lib\GlassToast.ahk
 
-APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.6"
+APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.7"
       , repo: "https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense"
       , api: "https://api.github.com/repos/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/latest"
       , lnk: A_Startup "\Windows 11 Key Remapper.lnk"
@@ -1578,8 +1578,8 @@ ApplyUpdate(src, root, backup) {
     done := []
     try {
         loop files src "\*", "FR" {
-            rel := SubStr(A_LoopFileFullPath, StrLen(src) + 2)
-            dest := root "\" rel, new := A_LoopFileFullPath
+            rel := SubStr(A_LoopFilePath, StrLen(src) + 2)          ; A_LoopFilePath keeps src's form (a temp folder may have a short 8.3 name)
+            dest := root "\" rel, new := A_LoopFilePath
             if (FileExist(dest) && Sha256File(dest) = Sha256File(new))
                 continue
             SplitPath(dest, , &destDir)
