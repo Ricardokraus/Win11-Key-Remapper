@@ -4,7 +4,7 @@ Persistent
 
 ;@Ahk2Exe-SetName Windows 11 Key Remapper
 ;@Ahk2Exe-SetDescription Windows 11 Key Remapper
-;@Ahk2Exe-SetVersion 0.5.7
+;@Ahk2Exe-SetVersion 0.5.8
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 Ricardo - MIT License
 ;@Ahk2Exe-SetOrigFilename Win11KeyRemapper.exe
 ;@Ahk2Exe-SetMainIcon ..\assets\icon.ico
@@ -32,7 +32,7 @@ Persistent
 
 #Include %A_ScriptDir%\lib\GlassToast.ahk
 
-APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.7"
+APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.8"
       , repo: "https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense"
       , api: "https://api.github.com/repos/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/latest"
       , lnk: A_Startup "\Windows 11 Key Remapper.lnk"
@@ -1085,9 +1085,8 @@ CaptureDone() {
         case "target": DRAFT.targetVK := r.vk, DRAFT.targetSC := r.sc, DRAFT.targetMods := r.mods, what := "Works as: "
         case "launch": DRAFT.launchVK := r.vk, DRAFT.launchSC := r.sc, DRAFT.launchMods := r.mods, what := "Shortcut: "
     }
-    code := Format("VK {:X} · SC {:X}", r.vk, r.sc)  ; for reports of new laptops: the notice and the log
-    Log("Key pressed for " CAP.target ": " ComboLabel(r.mods, r.vk, r.sc) " (" code ")")
-    CommitDraft(what (CAP.target = "source" ? KeyLabel(r.vk, r.sc) : ComboLabel(r.mods, r.vk, r.sc)), "Saved · " code)
+    Log("Key pressed for " CAP.target ": " ComboLabel(r.mods, r.vk, r.sc) " (" KeyCode(r.vk, r.sc) ")")
+    CommitDraft(what (CAP.target = "source" ? KeyLabel(r.vk, r.sc) : ComboLabel(r.mods, r.vk, r.sc)))
 }
 
 ; ============================================================================
@@ -1124,6 +1123,27 @@ ComboParts(mods, vk, sc, anySide := false) {
     parts.Push(KeyLabel(vk, sc))
     return parts
 }
+
+; The code of each keycap of ComboParts, shown under it: "VK A3 · SC 11D".
+; Modifiers aren't stored with a scan code: Windows gives it (with the
+; extended bit, like the hook sees it). Either side ("Ctrl"): the generic VK.
+ComboCodes(mods, vk, sc, anySide := false) {
+    codes := [], seen := Map()
+    for name in mods {
+        label := anySide ? MOD_FAMILY[name] : MOD_LABEL[name]
+        if seen.Has(label)
+            continue
+        seen[label] := true
+        mvk := anySide ? Map("Ctrl", 0x11, "Alt", 0x12, "Shift", 0x10, "Win", 0x5B)[label] : MOD_VK[name]
+        msc := DllCall("MapVirtualKey", "uint", mvk, "uint", 4, "uint")       ; MAPVK_VK_TO_VSC_EX
+        msc := (msc & 0xFF) | ((msc >> 8) = 0xE0 || (msc >> 8) = 0xE1 ? 0x100 : 0)
+        codes.Push(KeyCode(mvk, msc))
+    }
+    codes.Push(KeyCode(vk, sc))
+    return codes
+}
+
+KeyCode(vk, sc) => sc ? Format("VK {:X} · SC {:X}", vk, sc) : Format("VK {:X}", vk)
 
 ComboLabel(mods, vk, sc, anySide := false) {
     out := ""
@@ -1802,30 +1822,30 @@ BuildGeneralPage() {
 }
 
 ; Keys: a picture, not a form. Your key -> what it works as, big keycaps you
-; click to change, three buttons for what the key does; then the shortcut
-; that opens an app (NitroSense by default) as one line. No descriptions or key codes (codes go to the log);
-; the finer options are in Advanced.
+; click to change (their codes in small print under them), three buttons for
+; what the key does; then the shortcut that opens an app (NitroSense by
+; default) as one line. No descriptions; the finer options are in Advanced.
 BuildKeysPage() {
     th := UI.th, bg := " Background" Hex6(th.card)
     grp := Group("keys", 70)
-    y := Row(grp, 172)
+    y := Row(grp, 186)
     colW := 234, lx := SL.cx + 16, rx := SL.rx - colW, mid := SL.cx + SL.cw // 2
     Place("Text", "keys", lx, y + 18, colW, 20, "0x81" bg, "Your key", 10.5, "w400", th.text)
     Place("Text", "keys", rx, y + 18, colW, 20, "0x81" bg, "Works as", 10.5, "w400", th.text)
-    UI.srcKeys := NewKeyView("source", "keys", lx, y + 44, colW, 56, true)
-    UI.arrow := Place("Text", "keys", mid - 20, y + 58, 40, 28, "0x81" bg, Chr(0xE72A), 15, "w400", th.sub, UI.iconFont)
-    UI.targetKeys := NewKeyView("target", "keys", rx, y + 44, colW, 56, true)
+    UI.srcKeys := NewKeyView("source", "keys", lx, y + 44, colW, 72, true)
+    UI.arrow := Place("Text", "keys", mid - 20, y + 54, 40, 28, "0x81" bg, Chr(0xE72A), 15, "w400", th.sub, UI.iconFont)
+    UI.targetKeys := NewKeyView("target", "keys", rx, y + 44, colW, 72, true)
     bw := 150, gap := 8, bx := mid - (3 * bw + 2 * gap) // 2
     UI.modeBtns := []
     for i, label in MODE_BUTTONS
-        UI.modeBtns.Push(NewButton("keys", bx + (i - 1) * (bw + gap), y + 120, bw, label).OnEvent("Click", SetMode.Bind(i)))
+        UI.modeBtns.Push(NewButton("keys", bx + (i - 1) * (bw + gap), y + 134, bw, label).OnEvent("Click", SetMode.Bind(i)))
 
     grp := Group("keys", grp.y + grp.h + 16, "Open an app with a shortcut")
-    y := Row(grp, 64)
-    UI.launchKeys := NewKeyView("launch", "keys", lx, y + 15, 250, 34)
-    UI.opens := Place("Text", "keys", lx + 254, y + 22, 44, 20, "0x80" bg, "opens", 10.5, "w400", th.text)
-    UI.appList := NewList("keys", lx + 300, y + 17, 180, [""], OnAppChange)
-    NewSwitch("launchEnabled", "keys", SL.rx - 40, y + 22)
+    y := Row(grp, 68)
+    UI.launchKeys := NewKeyView("launch", "keys", lx, y + 10, 250, 50)
+    UI.opens := Place("Text", "keys", lx + 254, y + 15, 44, 20, "0x80" bg, "opens", 10.5, "w400", th.text)
+    UI.appList := NewList("keys", lx + 300, y + 10, 180, [""], OnAppChange)
+    NewSwitch("launchEnabled", "keys", SL.rx - 40, y + 16)
 }
 
 BuildNotificationsPage() {
@@ -2067,10 +2087,11 @@ NewList(page, x, y, w, items, onChange) {
         .OnEvent("Click", OpenSelect)
 }
 
-; The keys of a shortcut drawn as keycaps, with a pencil: click to change
-; them (it listens for the next key or shortcut). big: larger and centered.
+; The keys of a shortcut drawn as keycaps, each with its code under it, and
+; a pencil: click to change them (it listens for the next key or shortcut).
+; big: larger and centered.
 NewKeyView(name, page, x, y, w, h, big := false) {
-    return NewWidget("keys", page, x, y, w, h, {parts: [], listen: false, big: big, note: "", faded: false, problem: false})
+    return NewWidget("keys", page, x, y, w, h, {parts: [], codes: [], listen: false, big: big, note: "", faded: false, problem: false})
         .OnEvent("Click", (*) => CaptureToggle(name))
 }
 
@@ -3122,10 +3143,11 @@ RefreshSettings() {
             SetKeyView("target", UI.targetKeys, d.targetMods, d.targetVK, d.targetSC, false, listening = "target")
         case "Disable":                     ; nothing to click: it does nothing
             UI.keyText["target"] := "Nothing"
-            UI.targetKeys.Update({parts: [], listen: false, note: "Nothing", _enabled: false, faded: false, problem: false})
+            UI.targetKeys.Update({parts: [], codes: [], listen: false, note: "Nothing", _enabled: false, faded: false, problem: false})
         default:                            ; works as itself
             UI.keyText["target"] := UI.keyText["source"]
-            UI.targetKeys.Update({parts: d.sourceVK ? ComboParts([], d.sourceVK, d.sourceSC) : [], listen: false, note: ""
+            UI.targetKeys.Update({parts: d.sourceVK ? ComboParts([], d.sourceVK, d.sourceSC) : []
+                                , codes: d.sourceVK ? ComboCodes([], d.sourceVK, d.sourceSC) : [], listen: false, note: ""
                                 , _enabled: false, faded: false, problem: false})
     }
     for i, btn in UI.modeBtns
@@ -3158,8 +3180,8 @@ RefreshSettings() {
 
 SetKeyView(name, wd, mods, vk, sc, anySide, listen, dim := false) {
     UI.keyText[name] := listen ? "listening" : vk ? ComboLabel(mods, vk, sc, anySide) : "Not set"
-    wd.Update({parts: vk ? ComboParts(mods, vk, sc, anySide) : [], listen: listen, note: "", _enabled: !dim, faded: dim
-             , problem: UI.problemWhere = name})
+    wd.Update({parts: vk ? ComboParts(mods, vk, sc, anySide) : [], codes: vk ? ComboCodes(mods, vk, sc, anySide) : []
+             , listen: listen, note: "", _enabled: !dim, faded: dim, problem: UI.problemWhere = name})
 }
 
 ; Sets a switch; a change of state slides the knob (not on the first draw)
@@ -3774,8 +3796,9 @@ DrawAppIcon(hbm, x, y, size) {          ; DrawIconEx keeps the icon's alpha (GDI
     DllCall("DeleteDC", "ptr", hdc)
 }
 
-; A key or shortcut as keycaps. Hover darkens their edge; pressed, they go
-; down. A pencil after them says "click to change". big: larger, centered.
+; A key or shortcut as keycaps, each with its code in small print under it
+; (codes: one per part). Hover darkens their edge; pressed, they go down. A
+; pencil after them says "click to change". big: larger, centered.
 ; note: a word instead of keys ("Nothing"). problem: what's missing is here.
 RenderKeys(wd) {
     th := UI.th, k := UI.k, parts := wd.parts, dim := wd.faded, big := wd.big
@@ -3786,7 +3809,11 @@ RenderKeys(wd) {
     font := 0, fi := 0, pencil := wd._enabled && !wd.listen
     penW := pencil && famI ? Round((big ? 30 : 26) * k) : 0
     avail := cv.w - penW
-    capH := Round((big ? 44 : 26) * k), y0 := Round((cv.h - capH) / 2 - k), rad := (big ? 8 : 6) * k
+    capH := Round((big ? 44 : 26) * k), rad := (big ? 8 : 6) * k
+    codes := wd.codes.Length = parts.Length ? wd.codes : []
+    capArea := Round((big ? 52 : 30) * k)   ; keycaps on top, codes under them
+    y0 := Round((capArea - capH) / 2 - k)
+    fc := codes.Length ? GT_Font(famR, (big ? 11 : 10) * k, 0) : 0
     down := wd._enabled && wd.press && wd.hover ? 2 * k : 0
     edge := wd.problem ? th.warn : wd._enabled && wd.hover ? th.sub : th.keyEdge
     endX := 0
@@ -3794,7 +3821,7 @@ RenderKeys(wd) {
         font := GT_Font(fam, (big ? 14 : 12.5) * k, 0), text := "Press a key or shortcut…"
         cw := Min(cv.w - 2 * k, GT_MeasureW(g, text, font, fmtL) + 26 * k)
         x := big ? (cv.w - cw) / 2 : k
-        FillPathFree(g, GT_RoundPath(x, y0, cw, capH + 2 * k, rad), Argb(th.accent, 0x24))
+        FillPathFree(g, GT_RoundPath(x, y0, cw, capH + 2 * k, rad), Argb(th.accent, 0x24))   ; (y0: the keycap area)
         StrokePathFree(g, GT_RoundPath(x, y0, cw, capH + 2 * k, rad), Argb(th.accent), 1.5 * k)
         GT_Text(g, text, font, Argb(th.accent), x, y0, cw, capH + 2 * k, fmtC)
     } else if (wd.note != "" || !parts.Length) {
@@ -3803,15 +3830,18 @@ RenderKeys(wd) {
         color := wd.note != "" ? th.sub : wd.problem ? th.warn : th.accent
         tw := GT_MeasureW(g, text, font, fmtL) + 4 * k
         x := big ? (avail - tw) / 2 + penW / 2 : 0
-        GT_Text(g, text, font, Argb(color), x, 0, tw, cv.h, fmtL)
+        GT_Text(g, text, font, Argb(color), x, 0, tw, capArea, fmtL)
         endX := x + tw
     } else {
         size := big ? 17 : 13, padX := (big ? 28 : 20) * k
+        codeW := []                         ; a code may be wider than its keycap
+        for c in codes
+            codeW.Push(GT_MeasureW(g, c, fc, fmtL) + 6 * k)
         loop {                              ; shrink the text if the shortcut is long
             font := GT_Font(fam, size * k, 0)
             plusW := GT_MeasureW(g, "+", font, fmtL) + 12 * k, total := 0
             for i, part in parts
-                total += GT_MeasureW(g, part, font, fmtL) + padX + (i > 1 ? plusW : 0)
+                total += Max(GT_MeasureW(g, part, font, fmtL) + padX, codes.Length ? codeW[i] : 0) + (i > 1 ? plusW : 0)
             if (total <= avail - 2 * k || size <= 10)
                 break
             DllCall("gdiplus\GdipDeleteFont", "ptr", font)
@@ -3820,22 +3850,25 @@ RenderKeys(wd) {
         x := big ? Max(k, (avail - total) / 2 + penW / 2) : k
         for i, part in parts {
             if (i > 1) {
-                GT_Text(g, "+", font, Argb(th.sub), x, 0, plusW, cv.h, fmtC)
+                GT_Text(g, "+", font, Argb(th.sub), x, 0, plusW, capArea, fmtC)
                 x += plusW
             }
             capW := GT_MeasureW(g, part, font, fmtL) + padX
-            FillPathFree(g, GT_RoundPath(x, y0 + 2 * k, capW, capH, rad), Argb(th.keyShade))
-            FillPathFree(g, GT_RoundPath(x, y0 + down, capW, capH, rad), Argb(th.keyFace))
-            StrokePathFree(g, GT_RoundPath(x + 0.5, y0 + down + 0.5, capW - 1, capH - 1, rad), Argb(edge), wd.problem ? 1.5 * k : 1)
-            GT_Text(g, part, font, Argb(th.keyText), x, y0 + down, capW, capH, fmtC)
-            x += capW
+            slotW := Max(capW, codes.Length ? codeW[i] : 0), cx := x + (slotW - capW) / 2
+            FillPathFree(g, GT_RoundPath(cx, y0 + 2 * k, capW, capH, rad), Argb(th.keyShade))
+            FillPathFree(g, GT_RoundPath(cx, y0 + down, capW, capH, rad), Argb(th.keyFace))
+            StrokePathFree(g, GT_RoundPath(cx + 0.5, y0 + down + 0.5, capW - 1, capH - 1, rad), Argb(edge), wd.problem ? 1.5 * k : 1)
+            GT_Text(g, part, font, Argb(th.keyText), cx, y0 + down, capW, capH, fmtC)
+            if codes.Length
+                GT_Text(g, codes[i], fc, Argb(th.sub), x, capArea, slotW, cv.h - capArea, fmtC)
+            x += slotW
         }
         endX := x
     }
     if penW {                               ; "click to change"
         fi := GT_Font(famI, (big ? 14 : 12) * k, 0)
-        GT_Text(g, Chr(0xE70F), fi, Argb(wd.hover ? th.text : th.sub), endX + 8 * k, 0, penW, cv.h, fmtL)
+        GT_Text(g, Chr(0xE70F), fi, Argb(wd.hover ? th.text : th.sub), endX + 8 * k, 0, penW, capArea, fmtL)
     }
-    FreeAll([font, fi], [fmtL, fmtC])
+    FreeAll([font, fi, fc], [fmtL, fmtC])
     return CanvasDone(cv, th.card, dim)
 }

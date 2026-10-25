@@ -117,7 +117,7 @@ double-click `src\Win11KeyRemapper.ahk`; it's the same app.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot-dark.png">
-    <img src="assets/screenshot-light.png" alt="The settings window, Keys section: the key to remap, what it does and the shortcut that opens NitroSense" width="760">
+    <img src="assets/screenshot-light.png" alt="The settings window, Keys section: the NitroSense key works as Num Lock, with buttons for another key, disabled or normal, and Right Ctrl + NitroSense key opens NitroSense" width="760">
   </picture>
 </p>
 

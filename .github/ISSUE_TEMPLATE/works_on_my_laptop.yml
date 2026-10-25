@@ -8,7 +8,7 @@ body:
       value: |
         Thanks! Reports that it does **not** work are just as useful.
         The key codes come from the app itself: tray icon → Settings… → Keys → click the key under **Your key** → press the key.
-        The codes appear in the message at the bottom of the window (for example `VK FF · SC 175`).
+        The codes appear under the key (for example `VK FF · SC 175`).
 
   - type: input
     id: model
@@ -55,7 +55,7 @@ body:
     id: version
     attributes:
       label: App version
-      placeholder: "0.5.7"
+      placeholder: "0.5.8"
 
   - type: textarea
     id: notes

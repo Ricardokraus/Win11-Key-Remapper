@@ -330,7 +330,9 @@ codes := 0
 for item in UI.items
     if (item.page = "keys" && item.ctl.Type = "Text" && InStr(item.ctl.Value, "VK "))
         codes++
-Eq(codes, 0, "gui: no key codes on the Keys page")
+Eq(codes, 0, "gui: no description lines on the Keys page")
+Eq(UI.srcKeys.codes[1] " | " UI.targetKeys.codes[1], "VK FF · SC 175 | VK 90 · SC 145", "gui: codes under the keys")
+Eq(UI.launchKeys.codes[1] " | " UI.launchKeys.codes[2], "VK A3 · SC 11D | VK FF · SC 175", "gui: codes under each key of the shortcut")
 Eq(UI.modeBtns[1].variant UI.modeBtns[2].variant, "accent", "gui: mode button lit")
 Eq(MODE_LABELS.Length MODE_BUTTONS.Length, "33", "gui: only press a key, do nothing, normal")
 Check(UI.targetKeys.Visible && UI.keyText["target"] = "Num Lock", "gui: works as Num Lock")
@@ -369,7 +371,7 @@ Ev(0x41, 0x1E)
 CaptureDone()
 Ev(0x41, 0x1E, true)
 Eq(UI.keyText["source"] " " CFG.sourceVK, "A 65", "gui: detected key applied at once")
-Check(InStr(NT.last, "Your key: A") && InStr(NT.last, "VK 41 · SC 1E"), "gui: the notice shows the key's codes  [" NT.last "]")
+Check(InStr(NT.last, "Your key: A") && UI.srcKeys.codes[1] = "VK 41 · SC 1E", "gui: notice, and the new key's code under it  [" NT.last "]")
 Eq(LoadSettings(SETTINGS_PATH).sourceVK, 0x41, "gui: and saved")
 
 SetMode(2)

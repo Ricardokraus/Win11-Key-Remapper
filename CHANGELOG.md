@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.8] - 2026-10-25
 
 ### Changed
 
@@ -12,8 +12,8 @@ uses [Semantic Versioning](https://semver.org/).
   *Works as*, as big keycaps you click to change (a pencil shows they can be
   changed), and three buttons for what the key does: *Another key*,
   *Disabled*, *Normal*. Choosing *Another key* without a key listens for it
-  right away. No more descriptions or key codes on the page: the codes show
-  in the message when you pick a key, and in the log.
+  right away. No more description lines: each keycap has its code in small
+  print under it (also for each key of a shortcut), and the log has them too.
 - The shortcut section is now **Open an app with a shortcut**, in one line:
   the shortcut, *opens*, the app (a drop-down list: NitroSense found
   automatically, your app, or *Choose another app…*), and its switch.
@@ -214,6 +214,7 @@ First public release.
 - Compiled `Win11KeyRemapper.exe` built by GitHub Actions, with SHA-256 sums
   and optional VirusTotal scan links in the release notes.
 
+[0.5.8]: https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/tag/v0.5.8
 [0.5.7]: https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/tag/v0.5.7
 [0.5.5]: https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/tag/v0.5.5
 [0.5.4]: https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/tag/v0.5.4

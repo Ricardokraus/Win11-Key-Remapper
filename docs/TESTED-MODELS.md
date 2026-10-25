@@ -3,8 +3,8 @@
 [← Back to the README](../README.md)
 
 Laptops and keyboards the app has been tried on. The codes are the ones the
-settings window shows when you pick a key (*Keys* → click *Your key*, then press
-the key: the codes are in the message at the bottom of the window).
+settings window shows under each key (*Keys* → click the key under *Your key*,
+then press yours).
 
 | Laptop | Windows | Codes shown in the settings window | Status |
 |---|---|---|---|
@@ -26,8 +26,7 @@ models get fixed. It takes two minutes:
 
 4. Copy the codes of each special key you tried (the NitroSense key,
    <kbd>Fn</kbd>+<kbd>Win</kbd>…): in the settings window, *Keys* → click the key
-   under *Your key*, press the key, and the codes appear in the message at the
-   bottom of the window.
+   under *Your key*, press the key, and its codes appear under it.
 
 5. Add anything odd you noticed and click **Create**.
 
