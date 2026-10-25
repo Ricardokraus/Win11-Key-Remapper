@@ -259,7 +259,7 @@ SEL := {wd: 0, gui: 0, hwnd: 0, fading: 0}     ; the open drop-down list (OpenSe
 TIP := {gui: 0, hwnd: 0}                        ; the ⓘ bubble
 ; Settings window layout, in logical pixels
 SL := {W: 820, H: 630, side: 220, cx: 236, cw: 560, rx: 780, kvX: 426, btnX: 684}
-; Update check: state "" | checking | latest | available | error
+; Update check: state "" | checking | latest | available | installing | error
 UPD := {state: "", latest: "", page: "", zip: "", sums: "", req: 0, manual: false, t0: 0, notified: ""}
 ; Developer log (Settings > Advanced > Developer): file paths, lines since the size check
 DEVLOG := {on: false, path: "", old: "", n: 0}
@@ -291,8 +291,9 @@ Main() {
     }
     MarkInstance()
     OnMessage(INSTANCE_MSG, OnInstanceMsg)
-    if FileExist(A_ScriptFullPath ".old")   ; the previous exe, left by an update
-        try FileDelete(A_ScriptFullPath ".old")
+    for old in [A_ScriptFullPath ".old", A_AhkPath ".old"]  ; the previous exe, left by an update
+        if FileExist(old)
+            try FileDelete(old)
     ProcessSetPriority("High")              ; costs nothing, keeps the hook snappy under load
     if (!A_IsCompiled && FileExist(IconPath()))
         TraySetIcon(IconPath())
@@ -338,8 +339,11 @@ Main() {
     } else if (args.settings != "") {      ; restarted from the settings window: back where it was
         ShowSettings(args.settings, args.x, args.y)
         SetTimer(() => Notice("The app restarted", Summary()), -400)
-    } else if args.updated
+    } else if args.updated {
+        if (CopyKind().kind = "installed")  ; Installed apps shows the new version
+            try RegWrite(APP.version, "REG_SZ", UNINSTALL_KEY, "DisplayVersion")
         SetTimer(() => SystemToast("Updated to version " APP.version, "See what's new on the GitHub release page"), -2000)
+    }
     else if (CFG.toastWhen != "Never")
         SetTimer(StatusToast, -2000)        ; give the desktop time to paint
     ScheduleUpdateCheck()
@@ -1372,9 +1376,16 @@ OpenSettingsFolder() {
 ; Updates (GitHub releases)
 ; ============================================================================
 ; The check is asynchronous (WinHttp + a polling timer): a blocking request
-; would stall the keyboard hook. Installing replaces the exe in place: it's
-; downloaded, verified against the release's SHA256SUMS.txt, the running exe
-; is renamed to .old (Windows allows that) and the new one is started.
+; would stall the keyboard hook. Install (one click, no questions): the
+; release zip is downloaded, checked against the release's SHA256SUMS.txt,
+; unpacked, and its files are copied over this copy (the zip and the
+; installed app have the same files); settings.ini and the log aren't in the
+; zip, so they stay. Every file it replaces is backed up first and put back
+; if one copy fails. The running Win11KeyRemapper.exe can't be overwritten
+; but can be renamed: it becomes .old, deleted at the next start. Then the
+; app restarts with the new files. No new exe is started, only the AutoHotkey
+; runtime Smart App Control already trusts. A local project (git) or a
+; folder it can't write to opens the release page instead.
 
 ScheduleUpdateCheck() {
     SetTimer(AutoCheckUpdates, CFG.checkUpdates ? -60000 : 0)     ; not during logon
@@ -1457,7 +1468,7 @@ UpdateDone(state, manual) {
     RefreshSettings()
     if (state = "available") {
         if manual
-            Notice("Update available: " UPD.latest, (A_IsCompiled ? "Click Install" : "Click Download") " to get it", "update", 4000)
+            Notice("Update available: " UPD.latest, (CanInstallUpdate() ? "Click Install" : "Click Download") " to get it", "update", 4000)
         else if (UPD.notified != UPD.latest)
             SystemToast("Update available: " UPD.latest, "Install it from Settings > Updates", "update", 7000)
         UPD.notified := UPD.latest
@@ -1481,6 +1492,9 @@ ParseRelease(json) {
     return rel
 }
 
+; Install puts the files in place itself; otherwise it opens the release page
+CanInstallUpdate() => !A_IsCompiled && !DEV_COPY && DirWritable(FullPath(A_ScriptDir "\..")) && DirWritable(A_ScriptDir)
+
 VersionNewer(tag, current) {
     if !RegExMatch(tag, "(\d+)\.(\d+)\.(\d+)", &mNew) || !RegExMatch(current, "(\d+)\.(\d+)\.(\d+)", &mCur)
         return false
@@ -1496,12 +1510,19 @@ InstallUpdate() {
     if (UPD.state != "available")
         return
     page := UPD.page != "" ? UPD.page : APP.repo "/releases/latest"
-    if (!A_IsCompiled || UPD.zip = "" || UPD.sums = "" || !DirWritable(A_ScriptDir)) {
-        Run(page)                           ; from source or in a protected folder: manual download
+    if (!CanInstallUpdate() || UPD.zip = "" || UPD.sums = "") {
+        Log("Update: opening the release page (" (DEV_COPY ? "local project" : "can't install here") ")")
+        Run(page)                           ; a local project or a protected folder: download it by hand
         return
     }
-    if (Dialog("Install " APP.short " " UPD.latest "?`n`nIt will be downloaded from GitHub, checked, installed in place of this version, and the app will restart.", "OKCancel Iconi") != "OK")
-        return
+    UPD.state := "installing"
+    RefreshSettings()
+    Notice("Installing " UPD.latest "…", "Downloading it from GitHub", "update", 15000)
+    SetTimer(InstallUpdateNow.Bind(page, FullPath(A_ScriptDir "\..")), -50)    ; let the window show it first
+}
+
+InstallUpdateNow(page, root) {
+    Log("Update: downloading " UPD.zip)
     dir := A_Temp "\Win11KeyRemapper-update"
     SplitPath(UPD.zip, &zipName)
     try {
@@ -1516,36 +1537,93 @@ InstallUpdate() {
     }
     HookInstall()                           ; the download kept this thread busy for a moment
     sums := ReadSums(dir "\SHA256SUMS.txt")
-    exeName := "Win11KeyRemapper.exe"
-    if (!sums.Has(zipName) || !sums.Has(exeName) || Sha256File(dir "\" zipName) != sums[zipName])
+    if (!sums.Has(zipName) || Sha256File(dir "\" zipName) != sums[zipName])
         return UpdateFailed("The downloaded file doesn't match its checksum.", page)
-    shell := ComObject("Shell.Application")
-    shell.NameSpace(dir "\files").CopyHere(shell.NameSpace(dir "\" zipName).Items(), 4 | 16 | 1024)
-    newExe := dir "\files\" exeName
-    loop 50 {                               ; unzipping may finish in the background
-        if (Sha256File(newExe) = sums[exeName])
-            break
-        Sleep(100)
-    }
-    if (Sha256File(newExe) != sums[exeName])
+    if (!UnzipTo(dir "\" zipName, dir "\files") || !FileExist(dir "\files\src\Win11KeyRemapper.ahk"))
         return UpdateFailed("The update couldn't be unpacked.", page)
-    old := A_ScriptFullPath ".old"
-    try {
-        if FileExist(old)
-            FileDelete(old)
-        FileMove(A_ScriptFullPath, old)     ; renaming a running exe is allowed
-        try FileCopy(newExe, A_ScriptFullPath)
-        catch as e {
-            FileMove(old, A_ScriptFullPath)
-            throw e
-        }
-    } catch as e
-        return UpdateFailed("The app couldn't be replaced: " e.Message, page)
-    Run('"' A_ScriptFullPath '" --restart ' ProcessExist() " --updated", A_ScriptDir)
+    try n := ApplyUpdate(dir "\files", root, dir "\backup")
+    catch as e
+        return UpdateFailed("The files couldn't be replaced: " e.Message "`nNothing was changed.", page)
+    Log("Update: " n " file(s) replaced, restarting as " UPD.latest)
+    try DirDelete(dir, true)
+    Run('"' A_AhkPath '" "' A_ScriptFullPath '" --restart ' ProcessExist() " --updated", A_ScriptDir)
     ExitApp
 }
 
+; Unpacks a zip with Windows' own unzip; returns the number of files unpacked
+UnzipTo(zip, dest) {
+    shell := ComObject("Shell.Application")
+    want := shell.NameSpace(zip).Items().Count                     ; top-level files and folders
+    shell.NameSpace(dest).CopyHere(shell.NameSpace(zip).Items(), 4 | 16 | 1024)   ; no progress, yes to all, no error UI
+    loop 100 {                              ; it may finish in the background
+        n := 0
+        loop files dest "\*", "FD"
+            n++
+        if (n >= want)
+            break
+        Sleep(50)
+    }
+    Sleep(200)                              ; the last file may still be being written
+    files := 0
+    loop files dest "\*", "FR"
+        files++
+    return files
+}
+
+; Copies every file under src to the same place under root. Unchanged files
+; are skipped; replaced ones are backed up first (the running exe is renamed
+; to .old instead) and everything is undone if one copy fails. Returns the
+; number of files written.
+ApplyUpdate(src, root, backup) {
+    done := []
+    try {
+        loop files src "\*", "FR" {
+            rel := SubStr(A_LoopFileFullPath, StrLen(src) + 2)
+            dest := root "\" rel, new := A_LoopFileFullPath
+            if (FileExist(dest) && Sha256File(dest) = Sha256File(new))
+                continue
+            SplitPath(dest, , &destDir)
+            DirCreate(destDir)
+            step := {dest: dest, bak: "", old: ""}
+            if FileExist(dest) {
+                if (dest = A_AhkPath) {         ; the running exe: renaming it is allowed
+                    step.old := dest ".old"
+                    if FileExist(step.old)
+                        FileDelete(step.old)
+                    FileMove(dest, step.old)
+                } else {
+                    step.bak := backup "\" rel
+                    SplitPath(step.bak, , &bakDir)
+                    DirCreate(bakDir)
+                    FileCopy(dest, step.bak, true)
+                }
+            }
+            done.Push(step)
+            FileCopy(new, dest, true)
+        }
+    } catch as e {
+        loop done.Length {                  ; undo, newest first
+            step := done[done.Length - A_Index + 1]
+            try {
+                if (step.old != "") {
+                    try FileDelete(step.dest)
+                    FileMove(step.old, step.dest)
+                } else if (step.bak != "")
+                    FileCopy(step.bak, step.dest, true)
+                else
+                    FileDelete(step.dest)
+            }
+        }
+        Log("Update: copying failed, undone (" e.Message ")")
+        throw e
+    }
+    return done.Length
+}
+
 UpdateFailed(msg, page) {
+    Log("Update failed: " StrReplace(msg, "`n", " "))
+    UPD.state := "available"
+    RefreshSettings()
     Dialog(msg "`n`nThe release page will open so you can download it manually.", "Icon!")
     try Run(page)
 }
@@ -3207,8 +3285,10 @@ UpdateUpdatesRow() {
         case "checking":
             btn := "Checking…", text := "Looking for a new version…"
         case "available":
-            btn := (A_IsCompiled ? "Install " : "Download ") UPD.latest
+            btn := (CanInstallUpdate() ? "Install " : "Download ") UPD.latest
             text := "A new version is available", color := th.ok, variant := "accent"
+        case "installing":
+            btn := "Installing…", text := "Downloading and installing " UPD.latest "…"
         case "latest":
             btn := "Check now", text := "You're up to date"
         case "error":
@@ -3216,7 +3296,7 @@ UpdateUpdatesRow() {
         default:
             btn := "Check now", text := "Not checked yet"
     }
-    UI.updBtn.Update({_text: btn, variant: variant, _enabled: UPD.state != "checking"})
+    UI.updBtn.Update({_text: btn, variant: variant, _enabled: UPD.state != "checking" && UPD.state != "installing"})
     UI.updText.Value := text
     SetColor(UI.updText, color)
 }

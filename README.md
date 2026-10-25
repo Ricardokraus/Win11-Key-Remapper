@@ -129,13 +129,17 @@ double-click `src\Win11KeyRemapper.ahk`; it's the same app.
 <summary><b>How to update</b></summary>
 <br>
 
-When there's a new version, the app tells you (*Settings* → *Updates*), and
-*Download* opens the release page. Then:
+When there's a new version, the app tells you. Open *Settings* → *Updates* and
+click **Install**: it downloads the new version from GitHub, checks it, puts it
+in place of the old one and restarts, in a couple of seconds. Your settings stay.
+
+By hand (or from version 0.5.5 and older, which can't install updates yet):
 
 1. Click *Exit* in the app (settings → *General* → *App*, or tray icon → *Exit*).
 
 2. Download the new zip and extract it **over the same folder**, replacing the
-   files. Your `settings.ini` isn't in the zip, so it stays.
+   files. Your `settings.ini` isn't in the zip, so it stays. (With the installer:
+   just run the new `Win11KeyRemapper-Setup`.)
 
 3. Double-click `Win11KeyRemapper.exe` again.
 

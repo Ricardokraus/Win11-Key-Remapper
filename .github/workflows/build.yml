@@ -187,9 +187,14 @@ jobs:
             official AutoHotkey runtime, which runs the app's script.
             ${{ env.SETUP_SIGNED == 'True' && '**Installer:** `Win11KeyRemapper-Setup` installs it for you, with a Start menu shortcut and an uninstaller in Installed apps.' || '**Installer:** `Win11KeyRemapper-Setup` installs it for you, with a Start menu shortcut and an uninstaller in Installed apps. ⚠️ It is **not signed yet**, so Smart App Control may block it on some PCs: if it does, **use the zip**. A signed installer is on the way.' }}
 
-            **Updating:** click *Exit* in the app, extract the new zip over the old folder (your
-            `settings.ini` stays) and open it again. Details in the
-            [README](https://github.com/${{ github.repository }}#installation) ·
+            **Updating:** from 0.5.6 on, *Settings* → *Updates* → **Install** does it for you (your
+            settings stay). By hand: click *Exit* in the app, extract the new zip over the old folder
+            and open it again. Details in the
+            [README](https://github.com/${{ github.repository }}#installation).
+
+            **Code signing:** the installer is going to be signed with free code signing provided by
+            [SignPath.io](https://about.signpath.io/), certificate by
+            [SignPath Foundation](https://signpath.org/) — see the
             [Code signing policy](https://github.com/${{ github.repository }}#code-signing-policy).
           files: |
             dist/${{ steps.package.outputs.name }}.zip

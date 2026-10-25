@@ -293,20 +293,24 @@ that the app sends).
 - The JSON is read with three regexes (`tag_name`, the release `html_url`, the
   `browser_download_url` of the zip and of `SHA256SUMS.txt`). Version comparison
   is numeric (`VersionNewer`).
-- From source (how the app is published now) the button is *Download*: it opens
-  the release page, and the user extracts the new zip over the old folder.
-- *Install* (compiled exe in a writable folder only; dormant while no exe is
-  published, see "The release: a runtime instead of an exe"): `Download()` the zip and
-  `SHA256SUMS.txt` (blocking, but the user asked for it; the hook is reinstalled
-  right after), check the zip's SHA-256 (`BCryptHash`), unzip with
-  `Shell.Application`, check the new exe's SHA-256, rename the running exe to
-  `.old` (Windows allows renaming a running exe), copy the new one in place,
-  start it with `--restart <pid> --updated` and exit. The next start deletes the
-  `.old` file. From source, or if anything fails, the release page opens instead.
+- *Install vX* (one click, no questions; the zip and the installed app alike):
+  `Download()` the zip and `SHA256SUMS.txt` to `%TEMP%\Win11KeyRemapper-update`
+  (blocking, but the user asked for it; the hook is reinstalled right after),
+  check the zip's SHA-256 (`BCryptHash`), unzip with `Shell.Application`
+  (`UnzipTo`), then `ApplyUpdate` copies every file over this copy: unchanged
+  files are skipped, replaced ones are backed up first and everything is put
+  back if one copy fails. The running `Win11KeyRemapper.exe` is renamed to
+  `.old` (Windows allows renaming a running exe) and deleted at the next start.
+  `settings.ini` and the log aren't in the zip, so they stay. Then
+  `--restart <pid> --updated` with the (new) runtime and exit; the new start
+  writes `DisplayVersion` in the Installed apps entry if it's the installed
+  copy. Only the AutoHotkey runtime runs, so Smart App Control has nothing new
+  to judge. A local project (`DEV_COPY`) or a folder it can't write to gets
+  *Download vX* instead, which opens the release page (`CanInstallUpdate`).
+- Measured end to end (a copy claiming 0.5.0 updating to the real 0.5.5): check
+  ~0.5 s, download + check + unzip + copy ~2 s, restart ~0.1 s.
 - The release assets' names are part of this contract: `Win11KeyRemapper-v*.zip`
-  and `SHA256SUMS.txt`. *Install* also needs `Win11KeyRemapper.exe` inside the
-  zip and in the sums; today's zips hold the script (`src\`, `assets\icon.ico`),
-  so an old exe copy that finds one sends the user to the release page.
+  (with `src\Win11KeyRemapper.ahk` inside) and `SHA256SUMS.txt` listing it.
 
 ## Notifications
 
@@ -493,7 +497,8 @@ The tests cover the logic; this needs real keys:
   *Transparency effects* off: a solid card, light or dark like the window.
 - [ ] Pause / resume and *Restart* from the tray.
 - [ ] Hide the tray icon, open the app again: the settings appear; turn it back on.
-- [ ] *Check now* (up to date / update available); *Download* opens the release page.
+- [ ] *Check now* (up to date / update available); *Install* updates and restarts the
+  app with the settings kept (a local project shows *Download*, which opens the page).
 - [ ] Start with Windows: sign out and in, the app starts.
 - [ ] *Advanced* → *Write a log* on; use the app, shut down and start again:
   the log shows "Windows asks to end the session", "Exit (Shutdown…)" and the

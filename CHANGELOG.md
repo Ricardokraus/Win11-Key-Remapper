@@ -8,6 +8,11 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **One-click updates**: *Settings* → *Updates* → **Install** downloads the new
+  version from GitHub, checks it against the release's checksums, replaces the
+  app's files and restarts, keeping your settings. It works for the zip and the
+  installed app; if a file can't be replaced, everything is put back. (Before,
+  the button only opened the release page.)
 - **Settings → Updates → This copy** says how the app is set up: installed,
   from the zip or a local project, and whether it runs with its own AutoHotkey
   or one installed on the PC (ⓘ shows the folder and the AutoHotkey path). The

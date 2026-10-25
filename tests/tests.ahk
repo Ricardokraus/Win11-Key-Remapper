@@ -349,7 +349,7 @@ CommitDraft()
 Eq(UI.toastPos.Value " " UI.toastAnim.Value " " CFG.toastPosition, "5 2 BottomRight", "gui: notification style applied")
 UPD.state := "available", UPD.latest := "v9.9.9"
 UpdateUpdatesRow()
-Check(UI.updBtn.Text = "Download v9.9.9" && InStr(UI.updText.Value, "new version"), "gui: update available (from source: download)")
+Check(UI.updBtn.Text = "Install v9.9.9" && InStr(UI.updText.Value, "new version"), "gui: update available (installs itself)")
 UPD.state := "", UPD.latest := ""
 UpdateUpdatesRow()
 
@@ -684,6 +684,28 @@ Check(Trim(left) = "Win11KeyRemapper.exe" && !DirExist(root "\src"), "uninstall:
 try RegDeleteKey("HKCU\Software\Win11KeyRemapperTest")
 SETTINGS_PATH := savedSettings, APP.lnk := savedLnk, UNINSTALL_LNKS := savedLnks, UNINSTALL_KEY := savedKey
 Eq(ParseArgs().uninstall, false, "no --uninstall argument")
+
+; ---- 13. Update: the new files go over this copy, or nothing changes ----
+upRoot := tmp "\upd-root", upNew := tmp "\upd-new", upBak := tmp "\upd-bak"
+DirCreate(upRoot "\src"), DirCreate(upNew "\src\lib")
+FileAppend("old app", upRoot "\src\Win11KeyRemapper.ahk"), FileAppend("same", upRoot "\README.md")
+FileAppend("[Settings]", upRoot "\src\settings.ini")
+FileAppend("new app", upNew "\src\Win11KeyRemapper.ahk"), FileAppend("same", upNew "\README.md")
+FileAppend("new lib", upNew "\src\lib\GlassToast.ahk")
+Eq(ApplyUpdate(upNew, upRoot, upBak), 2, "update: changed and new files written, unchanged skipped")
+Eq(FileRead(upRoot "\src\Win11KeyRemapper.ahk") FileRead(upRoot "\src\lib\GlassToast.ahk"), "new appnew lib", "update: new files in place")
+Eq(FileRead(upRoot "\src\settings.ini"), "[Settings]", "update: settings.ini kept")
+FileDelete(upNew "\src\Win11KeyRemapper.ahk"), FileAppend("newer app", upNew "\src\Win11KeyRemapper.ahk")
+FileDelete(upNew "\src\lib\GlassToast.ahk"), FileAppend("newer lib", upNew "\src\lib\GlassToast.ahk")
+FileSetAttrib("+R", upRoot "\src\lib\GlassToast.ahk")     ; this copy will fail
+failed := false
+try ApplyUpdate(upNew, upRoot, upBak "2")
+catch
+    failed := true
+FileSetAttrib("-R", upRoot "\src\lib\GlassToast.ahk")
+Check(failed, "update: a failed copy is reported")
+Eq(FileRead(upRoot "\src\Win11KeyRemapper.ahk") FileRead(upRoot "\src\lib\GlassToast.ahk"), "new appnew lib", "update: a failed copy undoes the others")
+Check(!DEV_COPY && CanInstallUpdate() = DirWritable(A_ScriptDir), "update: installs itself outside a git checkout")
 
 QUEUE.Length := 0
 try DirDelete(tmp, true)
