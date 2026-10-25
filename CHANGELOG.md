@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Settings → Updates → This copy** says how the app is set up: installed,
+  from the zip or a local project, and whether it runs with its own AutoHotkey
+  or one installed on the PC (ⓘ shows the folder and the AutoHotkey path). The
+  developer log's first line says the same.
+- A copy run from a git checkout says **Local project** in the settings window
+  (title, sidebar and version), so it's never mistaken for a release.
+
+### Fixed
+
+- Notices in the settings window (like the welcome one) are no longer cut off
+  with "…" when they fit in the window.
+- A git worktree is recognized as a development copy too (Uninstall refuses it).
+
 ## [0.5.5] - 2026-10-25
 
 ### Added

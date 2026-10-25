@@ -574,6 +574,14 @@ menu and desktop shortcuts, the log, an update download, the entry, and empty
 folders; a hidden `cmd` deletes the running exe and the remaining folders once
 the app has exited. A git checkout is refused (it would delete the source).
 
+`DEV_COPY` is true when the folder above `src\` has a `.git` (a folder, or a
+file in a git worktree): the settings window then says "Local project" (title,
+sidebar, version row) and uninstalling is refused. `CopyKind()` tells how the
+copy is set up — `dev`, `installed` (the Installed apps entry points to this
+folder), `zip` (run by its own `Win11KeyRemapper.exe`) or `script` — and which
+AutoHotkey runs it; Settings → *Updates* → *This copy* and the log's first line
+show it.
+
 ## Code signing (SignPath Foundation)
 
 Free for open-source projects; the certificate is issued to "SignPath

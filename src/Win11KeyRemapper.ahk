@@ -50,6 +50,10 @@ INSTANCE_TITLES := [INSTANCE_TITLE, "Win11KeyRemapper.Instance"]
 PACKAGE_FILES := ["Win11KeyRemapper.exe", "Win11KeyRemapper.ahk", "AutoHotkey-license.txt", "README.md", "LICENSE"
     , "CHANGELOG.md", "settings.example.ini", "SUPPORT.md", "SECURITY.md", "docs\FAQ.md", "docs\TESTED-MODELS.md"
     , "assets\icon.ico", "src\lib\GlassToast.ahk", "src\Win11KeyRemapper.ahk"]
+; Running from a git checkout (the developer's copy), not from a release: the
+; settings window says "Local project" and the app refuses to uninstall itself.
+; .git is a folder, or a file in a git worktree.
+DEV_COPY := FileExist(FullPath(A_ScriptDir "\..") "\.git") != ""
 UNINSTALL_KEY := "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Win11KeyRemapper"
 UNINSTALL_LNKS := [A_Programs "\Windows 11 Key Remapper.lnk", A_Desktop "\Windows 11 Key Remapper.lnk"]
 INSTANCE_MSG := DllCall("RegisterWindowMessage", "str", "Win11KeyRemapper.ShowSettings", "uint")
@@ -443,7 +447,7 @@ AppExit(reason, code) {
 
 UninstallApp(fromWindows := false, quiet := false, delSettings := false) {
     root := FullPath(A_ScriptDir "\..")
-    if DirExist(root "\.git") {
+    if DEV_COPY {
         if !quiet
             Dialog("This is a development copy (a git repository): uninstalling would delete its source files.`n`n"
                  . "To stop it, click Exit; to remove it, delete its folder.", "Icon!")
@@ -563,7 +567,7 @@ SetLog(on) {
     DEVLOG.path := LogPath(), DEVLOG.old := RegExReplace(DEVLOG.path, "\.log$", ".old.log")
     DEVLOG.on := true, DEVLOG.n := 0
     Log("---- Log on: " APP.name " " APP.version ", AutoHotkey " A_AhkVersion (A_PtrSize = 8 ? " 64-bit" : " 32-bit")
-      . ", Windows " A_OSVersion ", " (A_IsCompiled ? "exe" : "script") " " A_ScriptFullPath
+      . ", Windows " A_OSVersion ", " (A_IsCompiled ? "exe" : CopyKind().desc) " " A_ScriptFullPath
       . (A_Args.Length ? ", args: " JoinArgs(A_Args) : "") ", " MonitorGetCount() " monitor(s), main " A_ScreenDPI " dpi")
 }
 
@@ -1653,7 +1657,7 @@ BuildSettings(page, posX := "", posY := "") {
         UI.groups[p[1]] := [], UI.laidOut[p[1]] := UI.dpi
     UI.laidOut[""] := UI.dpi
 
-    g := Gui("-MinimizeBox -MaximizeBox -DPIScale", APP.name)
+    g := Gui("-MinimizeBox -MaximizeBox -DPIScale", APP.name (DEV_COPY ? " (local project)" : ""))
     UI.gui := g
     g.BackColor := Hex6(th.win)
     g.MarginX := 0, g.MarginY := 0
@@ -1667,6 +1671,8 @@ BuildSettings(page, posX := "", posY := "") {
     for i, p in PAGES
         UI.nav[p[1]] := NewWidget("nav", "", 8, 72 + (i - 1) * 40, SL.side - 16, 36
                                 , {page: p[1], label: p[2], glyph: p[3], pos: 1}).OnEvent("Click", ShowPage.Bind(p[1]))
+    if DEV_COPY                             ; a git checkout, not a release (see DEV_COPY)
+        Place("Text", "", 20, SL.H - 38, SL.side - 40, 18, "0x80 Background" Hex6(th.win), "Local project", 9, "w600", th.warn)
 
     ; Content: section title, then the section's cards
     UI.title := Place("Text", "", SL.cx, 14, SL.cw, 38, "0x80 Background" Hex6(th.win), "", 20, "w600", th.text)
@@ -1839,13 +1845,34 @@ BuildUpdatesPage() {
     RowText("updates", y, 64, "Check for updates automatically", "Once a day, from GitHub. Nothing about you is sent.", 470)
     NewSwitch("checkUpdates", "updates", SL.rx - 40, y + 22)
     y := Row(grp, 64)
-    r := RowText("updates", y, 64, "Version " APP.version, "", 340)
+    r := RowText("updates", y, 64, "Version " APP.version (DEV_COPY ? " (local project)" : ""), "", 340)
     UI.updText := r.desc
     UI.updBtn := NewButton("updates", SL.rx - 170, y + 16, 170, "Check now")
     UI.updBtn.OnEvent("Click", (*) => UpdateAction())
     y := Row(grp, 64)
     RowText("updates", y, 64, "Release notes", "What changed in each version.", 400)
     NewButton("updates", SL.rx - 96, y + 16, 96, "Open").OnEvent("Click", (*) => Run(APP.repo "/releases"))
+    y := Row(grp, 64)
+    copy := CopyKind()
+    RowText("updates", y, 64, "This copy", copy.desc, SL.rx - SL.cx - 32
+          , "Folder: " FullPath(A_ScriptDir "\..") "`nAutoHotkey: " A_AhkPath)
+}
+
+; How this copy is set up, for the Updates page and the log: installed with
+; the installer, the zip, or the developer's git checkout; run by the
+; AutoHotkey bundled with the release (Win11KeyRemapper.exe) or by one
+; installed on the PC
+CopyKind() {
+    root := FullPath(A_ScriptDir "\..")
+    SplitPath(A_AhkPath, &exe, &exeDir)
+    own := exe = "Win11KeyRemapper.exe" && exeDir = root
+    installDir := ""
+    try installDir := RegRead(UNINSTALL_KEY, "InstallLocation")
+    kind := DEV_COPY ? "dev" : (installDir != "" && FullPath(installDir) = root) ? "installed" : own ? "zip" : "script"
+    how := own ? "its own AutoHotkey " A_AhkVersion : "the AutoHotkey " A_AhkVersion " installed on this PC"
+    desc := (kind = "dev" ? "Local project (git)" : kind = "installed" ? "Installed" : kind = "zip" ? "From the zip" : "Script")
+          . ", run by " how
+    return {kind: kind, own: own, desc: desc}
 }
 
 BuildAdvancedPage() {
@@ -2387,7 +2414,7 @@ NoticeBuild(title, sub, kind) {
     mb := GT_Bitmap(1, 1), mg := GT_BmpGraphics(mb)
     tw := GT_MeasureW(mg, title, fTitle, fmt), sw := sub != "" ? GT_MeasureW(mg, sub, fSub, fmt) : 0
     DllCall("gdiplus\GdipDeleteGraphics", "ptr", mg), DllCall("gdiplus\GdipDisposeImage", "ptr", mb)
-    w := Round(Min(11 * k + icon + 10 * k + tw + (sw ? 8 * k + sw : 0) + 18 * k, 520 * k))
+    w := Round(Min(11 * k + icon + 10 * k + tw + (sw ? 8 * k + sw : 0) + 18 * k, (SL.W - 60) * k))   ; "…" only if wider than the window
     winW := w + 2 * pad, winH := h + 2 * pad
 
     ; 32-bit canvas for UpdateLayeredWindow
