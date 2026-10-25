@@ -46,8 +46,9 @@ off affects the whole PC, and often can't be undone without reinstalling
 Windows). A compiled script would be such an app; the AutoHotkey runtime is
 well known to Windows, so it runs everywhere.
 
-The installer in the releases doesn't work yet on most Windows 11 PCs, for the
-same reason: it isn't signed, so use the zip. A signed installer is on the way:
+The installer in the releases isn't signed yet, so for the same reason it may
+be blocked on some Windows 11 PCs; if it is, use the zip. A signed installer is
+on the way:
 the project is applying for free code
 signing from SignPath Foundation (see the
 [Code signing policy](../README.md#code-signing-policy)).

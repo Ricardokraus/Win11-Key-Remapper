@@ -15,6 +15,12 @@ uses [Semantic Versioning](https://semver.org/).
 - A copy run from a git checkout says **Local project** in the settings window
   (title, sidebar and version), so it's never mistaken for a release.
 
+### Changed
+
+- The note about the unsigned installer is softer: it may be blocked on some
+  PCs (then use the zip), instead of "doesn't work yet on most PCs". It did
+  install fine on a PC with Smart App Control on.
+
 ### Fixed
 
 - Notices in the settings window (like the welcome one) are no longer cut off

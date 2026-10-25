@@ -51,10 +51,11 @@ is a tiny tray app that gives that key a better job — or any other key you pic
    the app lives in the tray. Double-click its icon, or open the app again, to
    come back.
 
-> [!WARNING]
-> **The installer (`Win11KeyRemapper-Setup-…exe`) doesn't work yet on most
-> Windows 11 PCs**: it isn't signed, so *Smart App Control* blocks it and
-> SmartScreen warns about it. **Use the zip** (steps above): it works everywhere.
+> [!NOTE]
+> **The installer (`Win11KeyRemapper-Setup-…exe`) isn't signed yet**, so it may
+> not open on some Windows 11 PCs: *Smart App Control* can block it and
+> SmartScreen may warn about it. If that happens, **use the zip** (steps above):
+> it works everywhere.
 > The project is applying for free code signing from
 > [SignPath Foundation](https://signpath.org/); once the installer is signed,
 > this note goes away.

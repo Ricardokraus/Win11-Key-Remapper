@@ -19,7 +19,7 @@ permissions:
 # - Win11KeyRemapper-Setup-vX.Y.Z.exe: the same files, installed per user. It's
 #   signed through SignPath Foundation once the project is approved: until the
 #   SIGNPATH_API_TOKEN secret exists it's published unsigned (Smart App Control
-#   blocks it; use the zip).
+#   may block it; then use the zip).
 # - SHA256SUMS.txt.
 env:
   AHK_VERSION: '2.0.31'       # pinned: tested under Smart App Control, see docs/DEVELOPMENT.md
@@ -185,7 +185,7 @@ jobs:
             you'll keep (for example `Documents\Win11KeyRemapper`) and double-click
             **`Win11KeyRemapper.exe`**. Nothing to install, no AutoHotkey needed: that exe is the
             official AutoHotkey runtime, which runs the app's script.
-            ${{ env.SETUP_SIGNED == 'True' && '**Installer:** `Win11KeyRemapper-Setup` installs it for you, with a Start menu shortcut and an uninstaller in Installed apps.' || '⚠️ **The installer (`Win11KeyRemapper-Setup`) does not work yet on most Windows 11 PCs:** it is not signed, so Smart App Control blocks it. **Use the zip.** A signed installer is on the way.' }}
+            ${{ env.SETUP_SIGNED == 'True' && '**Installer:** `Win11KeyRemapper-Setup` installs it for you, with a Start menu shortcut and an uninstaller in Installed apps.' || '**Installer:** `Win11KeyRemapper-Setup` installs it for you, with a Start menu shortcut and an uninstaller in Installed apps. ⚠️ It is **not signed yet**, so Smart App Control may block it on some PCs: if it does, **use the zip**. A signed installer is on the way.' }}
 
             **Updating:** click *Exit* in the app, extract the new zip over the old folder (your
             `settings.ini` stays) and open it again. Details in the
