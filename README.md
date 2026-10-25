@@ -82,11 +82,12 @@ double-click `src\Win11KeyRemapper.ahk`; it's the same app.
 - **Holding it toggles Num Lock once** (or Caps / Scroll Lock), not over and
   over; other keys repeat like the real key.
 
-- **Built-in key detector**: click *Change…*, press a key or a combination, done.
+- **Built-in key detector**: click the key in *Settings* → *Keys*, press a key
+  or a combination, done.
 
-- **A shortcut to open NitroSense** (default: <kbd>Right Ctrl</kbd> + NitroSense
-  key). It finds the app by itself, Microsoft Store version included, or opens any
-  app you choose.
+- **A shortcut to open an app** (default: <kbd>Right Ctrl</kbd> + NitroSense key
+  opens NitroSense). It finds NitroSense by itself, Microsoft Store version
+  included, or opens any app you choose.
 
 - **Windows 11 style settings**: a sidebar with sections, **light and dark
   mode**, changes applied at once, small animations, sharp on every monitor.

@@ -326,21 +326,24 @@ Eq(CopyKind().kind, "script", "copy: a script run by an installed AutoHotkey")
 Check(InStr(CopyKind().desc, "installed on this PC"), "copy: says which AutoHotkey runs it")
 Eq(UI.keyText["source"], "NitroSense key", "gui: source keys")
 Eq(UI.keyText["launch"], "Right Ctrl + NitroSense key", "gui: launch keys")
-Eq(UI.srcDesc.Value, "Code: VK FF · SC 175", "gui: key code shown")
-Eq(UI.mode.Value, 1, "gui: mode")
-Eq(MODE_LABELS.Length, 3, "gui: only press a key, do nothing, normal")
-Check(InStr(UI.actionInfo.Value, "Presses the key below"), "gui: action explained")
-Check(UI.targetBtn.Visible && UI.keyText["target"] = "Num Lock", "gui: Sends row shows Num Lock")
-Check(InStr(UI.appStatus.Value, "not found"), "gui: app not found")
+codes := 0
+for item in UI.items
+    if (item.page = "keys" && item.ctl.Type = "Text" && InStr(item.ctl.Value, "VK "))
+        codes++
+Eq(codes, 0, "gui: no key codes on the Keys page")
+Eq(UI.modeBtns[1].variant UI.modeBtns[2].variant, "accent", "gui: mode button lit")
+Eq(MODE_LABELS.Length MODE_BUTTONS.Length, "33", "gui: only press a key, do nothing, normal")
+Check(UI.targetKeys.Visible && UI.keyText["target"] = "Num Lock", "gui: works as Num Lock")
+Check(InStr(UI.appList.Text, "missing"), "gui: app not found")
 Eq(UI.status.Value, "Active", "gui: status")
 Eq(UI.tgState["launchEnabled"] UI.tgState["distinguish"] UI.tgState["matchSC"] UI.tgState["trayIcon"]
  . UI.tgState["checkUpdates"] UI.tgState["remapping"] UI.tgState["autostart"], "1111110", "gui: switches")
 Eq(UI.toastWhen.Value " " UI.toastPos.Value " " UI.toastAnim.Value " " UI.theme.Value, "1 1 1 1", "gui: lists")
 Eq(UI.updBtn.Text, "Check now", "gui: update button")
 ShowPage("about")
-Check(UI.title.Value = "About" && !UI.srcBtn.Visible, "gui: switching section hides the others")
+Check(UI.title.Value = "About" && !UI.srcKeys.Visible, "gui: switching section hides the others")
 ShowPage("keys")
-Check(UI.srcBtn.Visible, "gui: back to Keys")
+Check(UI.srcKeys.Visible, "gui: back to Keys")
 
 DRAFT.toastPosition := "BottomRight", DRAFT.toastAnim := "Fade"
 PreviewToast()
@@ -354,10 +357,9 @@ UPD.state := "", UPD.latest := ""
 UpdateUpdatesRow()
 
 CaptureToggle("source")
-Eq(UI.srcBtn.Text, "Cancel", "gui: listening button")
-Eq(UI.keyText["source"], "listening", "gui: listening keys")
+Check(UI.srcKeys.listen && UI.keyText["source"] = "listening", "gui: listening keys")
 CaptureToggle("source")
-Check(!CAP.active && UI.srcBtn.Text = "Change…", "gui: click again cancels")
+Check(!CAP.active && UI.keyText["source"] != "listening", "gui: click again cancels")
 CaptureToggle("source")
 CaptureToggle("target")
 Eq(CAP.target, "target", "gui: other capture replaces")
@@ -367,31 +369,26 @@ Ev(0x41, 0x1E)
 CaptureDone()
 Ev(0x41, 0x1E, true)
 Eq(UI.keyText["source"] " " CFG.sourceVK, "A 65", "gui: detected key applied at once")
+Check(InStr(NT.last, "Your key: A") && InStr(NT.last, "VK 41 · SC 1E"), "gui: the notice shows the key's codes  [" NT.last "]")
 Eq(LoadSettings(SETTINGS_PATH).sourceVK, 0x41, "gui: and saved")
 
-nBefore := UI.items.Length
-UI.mode.Value := 2
-OnModeChange(UI.mode)
-ctx := PMv2(), UI.launchBtn.GetPos(, &yHidden), PMv2(ctx)
-Check(CFG.mode = "Disable" && !UI.targetBtn.Visible && !UI.targetKeys.Visible, "gui: Sends row hidden when the key does nothing")
+SetMode(2)
+Check(CFG.mode = "Disable" && UI.keyText["target"] = "Nothing" && !UI.targetKeys._enabled, "gui: works as Nothing when the key does nothing")
+Check(UI.modeBtns[2].variant = "accent" && UI.modeBtns[1].variant = "", "gui: Disabled lit")
 Check(InStr(NT.last, "The key: Does nothing") && !InStr(LastToast(), "The key"), "gui: a notice inside the window says what was saved")
 DRAFT.targetVK := 0
-UI.mode.Value := 1
-OnModeChange(UI.mode)
-ctx := PMv2(), UI.launchBtn.GetPos(, &yShown), PMv2(ctx)
+SetMode(1)
 Eq(DRAFT.mode " " CFG.mode, "Key Disable", "gui: incomplete Key mode isn't applied")
-Check(UI.targetBtn.Visible && InStr(UI.targetDesc.Value, "Change"), "gui: Sends row back, asks for the key")
-Eq(yShown - yHidden, Round(64 * UI.k), "gui: the rows below move with it")
-CaptureToggle("target")
+Check(CAP.active && CAP.target = "target" && UI.targetKeys.listen, "gui: no key yet: it listens for it right away")
 Ev(0x43, 0x2E)
 CaptureDone()
 Ev(0x43, 0x2E, true)
 Eq(CFG.mode " " CFG.targetVK, "Key 67", "gui: applied once complete")
 
 d := DefaultSettings(), d.targetVK := 0
-Check(InStr(ValidateSettings(d, &where), "next to Sends") && where = "target", "validate: Key needs target")
+Check(InStr(ValidateSettings(d, &where), "Works as") && where = "target", "validate: Key needs target")
 d := DefaultSettings(), d.launchMods := []
-Check(InStr(ValidateSettings(d, &where), "never run") && where = "launch", "validate: launcher = source without modifier")
+Check(InStr(ValidateSettings(d, &where), "add a modifier") && where = "launch", "validate: launcher = source without modifier")
 d := DefaultSettings(), d.launchVK := 0
 Check(InStr(ValidateSettings(d), "shortcut that opens"), "validate: launcher needs shortcut")
 d := DefaultSettings(), d.launchPath := "C:\nope\nope.exe"
@@ -399,14 +396,14 @@ Eq(ValidateSettings(d), "", "validate: a missing app only warns")
 Eq(ValidateSettings(DefaultSettings()), "", "validate: defaults ok")
 
 DRAFT.launchPath := "C:\nope\nope.exe", UpdateApp()
-Check(InStr(UI.appStatus.Value, "nope.exe: file not found"), "gui: custom app missing")
+Check(UI.appList.Text = "nope (missing)" && UI.appList.items.Length = 3, "gui: custom app missing")
 AutoApp()
 Eq(CFG.launchPath, "auto", "gui: Auto = auto-detect")
 FlipSwitch("distinguish")
 Eq(UI.keyText["launch"] " " CFG.launchAnySide, "Ctrl + NitroSense key 1", "gui: either side")
 FlipSwitch("distinguish")
 FlipSwitch("launchEnabled")
-Check(!CFG.launchEnabled && !UI.launchBtn.Enabled && !UI.browse.Enabled && !UI.tg["distinguish"].Enabled, "gui: launcher off")
+Check(!CFG.launchEnabled && !UI.launchKeys._enabled && !UI.appList.Enabled && !UI.tg["distinguish"].Enabled, "gui: launcher off")
 FlipSwitch("distinguish")
 Eq(CFG.launchAnySide, 0, "gui: disabled switch can't flip")
 FlipSwitch("remapping")
@@ -467,15 +464,15 @@ FlipSwitch("toastGlass")
 
 ; Widgets: mouse down/up like a button, hand cursor, danger buttons, About links
 Check(!UI.HasOwnProp("more"), "gui: no ⋯ menu")
-hw := UI.srcBtn.Hwnd
+hw := UI.srcKeys.Hwnd
 OnSettingsMouseDown(0, 0x00050005, 0x201, hw)
-Check(UI.srcBtn.press, "gui: button pressed on mouse down")
+Check(UI.srcKeys.press, "gui: key pressed on mouse down")
 Eq(CAP.active, false, "gui: but nothing happens yet")
 OnSettingsMouseUp(0, 0x00050005, 0x202, hw)
 Critical "Off"
 Sleep 30
 Critical
-Check(!UI.srcBtn.press && CAP.active && CAP.target = "source", "gui: action on mouse up over the button")
+Check(!UI.srcKeys.press && CAP.active && CAP.target = "source", "gui: action on mouse up over the key")
 CaptureCancel()
 OnSettingsMouseDown(0, 0x00050005, 0x201, hw)
 OnSettingsMouseUp(0, 0x0005FFFB, 0x202, hw)          ; released outside (x = -5)
@@ -484,10 +481,10 @@ Sleep 30
 Critical
 Check(!CAP.active, "gui: released outside does nothing")
 Eq(OnSettingsSetCursor(hw, 0x2000001, 0x20, UI.gui.Hwnd), 1, "gui: hand cursor over a button")
-UI.auto.Enabled := false
-Eq(OnSettingsSetCursor(UI.auto.Hwnd, 0x2000001, 0x20, UI.gui.Hwnd), "", "gui: normal cursor over a disabled button")
-UI.auto.Enabled := true
-Eq(OnSettingsSetCursor(UI.mode.Hwnd, 0x2000001, 0x20, UI.gui.Hwnd), 1, "gui: hand cursor over a drop-down list")
+UI.modeBtns[1].Enabled := false
+Eq(OnSettingsSetCursor(UI.modeBtns[1].Hwnd, 0x2000001, 0x20, UI.gui.Hwnd), "", "gui: normal cursor over a disabled button")
+UI.modeBtns[1].Enabled := true
+Eq(OnSettingsSetCursor(UI.theme.Hwnd, 0x2000001, 0x20, UI.gui.Hwnd), 1, "gui: hand cursor over a drop-down list")
 danger := []
 for hwnd, wd in UI.widgets
     if (wd.kind = "button" && wd.variant = "danger")
@@ -509,9 +506,9 @@ newDpi := UI.dpi = 120 ? 168 : 120     ; another monitor's scale, whichever one 
 UI.dpi := newDpi, UI.k := newDpi / 96
 ApplyLayout()
 ctx := PMv2()                           ; read sizes like the window sees them (no DPI virtualization)
-UI.srcBtn.GetPos(, , &bw)
+UI.modeBtns[1].GetPos(, , &bw)
 PMv2(ctx)
-Eq(bw, Round(96 * UI.k), "gui: relaid out for another monitor's scale")
+Eq(bw, Round(150 * UI.k), "gui: relaid out for another monitor's scale")
 Check(UI.laidOut["general"] != newDpi, "gui: hidden sections are laid out later")
 ShowPage("general")
 ctx := PMv2()
@@ -525,9 +522,8 @@ DRAFT.theme := newTheme
 CommitDraft()
 RebuildSettings()
 Check(UI.gui && UI.themeName = StrLower(newTheme) && CFG.theme = newTheme && UI.page = "keys", "gui: theme change rebuilds, same section")
-UI.mode.Value := 3
-OnModeChange(UI.mode)
-Eq(CFG.mode, "None", "gui: mode applied")
+SetMode(3)
+Eq(CFG.mode " " UI.keyText["target"], "None " UI.keyText["source"], "gui: mode applied, works as itself")
 Eq(ParseArgs().settings, "", "no --settings argument")
 
 FlipSwitch("autostart")
@@ -639,7 +635,7 @@ Eq(LoadSettings(SETTINGS_PATH).targetVK, 0x14, "import: and saved")
 FileAppend("hello", tmp "\notes.txt")
 Check(InStr(ImportSettings(tmp "\notes.txt"), "isn't a settings file") && CFG.toastWhen = "Never", "import: other files refused, nothing changes")
 FileAppend("[Remap]`r`nMode=Key`r`nTargetVK=0`r`n", tmp "\broken.ini")
-Check(InStr(ImportSettings(tmp "\broken.ini"), "Choose the key or shortcut") && CFG.targetVK = 0x14, "import: incomplete settings refused")
+Check(InStr(ImportSettings(tmp "\broken.ini"), "Works as") && CFG.targetVK = 0x14, "import: incomplete settings refused")
 Check(InStr(ImportSettings(tmp "\missing.ini"), "can't be read"), "import: missing file")
 Reset(DefaultSettings())
 WriteSettings(SETTINGS_PATH, CFG)

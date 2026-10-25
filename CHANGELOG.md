@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Settings → Keys is simpler**: a picture instead of a form. *Your key* →
+  *Works as*, as big keycaps you click to change (a pencil shows they can be
+  changed), and three buttons for what the key does: *Another key*,
+  *Disabled*, *Normal*. Choosing *Another key* without a key listens for it
+  right away. No more descriptions or key codes on the page: the codes show
+  in the message when you pick a key, and in the log.
+- The shortcut section is now **Open an app with a shortcut**, in one line:
+  the shortcut, *opens*, the app (a drop-down list: NitroSense found
+  automatically, your app, or *Choose another app…*), and its switch.
+  *Distinguish left and right modifiers* moved to *Advanced*.
+- When a change can't be saved yet (a key is missing), a message in the
+  window says what to do.
+
 ## [0.5.7] - 2026-10-25
 
 (0.5.6 was tagged but never released: its build failed on a test.)

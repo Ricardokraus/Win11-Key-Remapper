@@ -114,7 +114,7 @@ this app's control.
 ### Does it work on other laptops or keyboards?
 
 Yes, for any key that reaches Windows as a key press: open the settings, go to
-*Keys*, click *Change…* next to *Key* and press it. Keys handled entirely by the
+*Keys*, click the key under *Your key* and press yours. Keys handled entirely by the
 firmware (like <kbd>Fn</kbd> itself) never reach Windows and can't be remapped.
 
 Tried it on another laptop? See [Tested models](TESTED-MODELS.md) and tell us how

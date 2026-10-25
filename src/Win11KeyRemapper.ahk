@@ -66,9 +66,8 @@ REPEAT_MS := 1500
 MODES       := ["Key", "Disable", "None"]
 ; Worded as states, not commands: "Press another key" read like a button
 MODE_LABELS := ["Works as another key or shortcut", "Does nothing (disabled)", "Works as usual (not remapped)"]
-ACTION_INFO := Map("Key", "Presses the key below instead. Num, Caps and Scroll Lock toggle once while held."
-                 , "Disable", "The key does nothing at all."
-                 , "None", "The key works as it normally would. The shortcut below still works.")
+; The three buttons under the keys in Settings > Keys
+MODE_BUTTONS := ["Another key", "Disabled", "Normal"]
 ; Before v0.5.0 the lock keys were modes of their own; they're now "press that key"
 LEGACY_MODES := Map("numlock", [0x90, 0x145], "capslock", [0x14, 0x3A], "scrolllock", [0x91, 0x46])
 LOCK_VKS     := Map(0x90, true, 0x14, true, 0x91, true)     ; a held lock key must not repeat
@@ -1082,11 +1081,13 @@ CaptureDone() {
     if (!r || !UI.gui)
         return
     switch CAP.target {
-        case "source": DRAFT.sourceVK := r.vk, DRAFT.sourceSC := r.sc, what := "Key: "
-        case "target": DRAFT.targetVK := r.vk, DRAFT.targetSC := r.sc, DRAFT.targetMods := r.mods, what := "Sends: "
+        case "source": DRAFT.sourceVK := r.vk, DRAFT.sourceSC := r.sc, what := "Your key: "
+        case "target": DRAFT.targetVK := r.vk, DRAFT.targetSC := r.sc, DRAFT.targetMods := r.mods, what := "Works as: "
         case "launch": DRAFT.launchVK := r.vk, DRAFT.launchSC := r.sc, DRAFT.launchMods := r.mods, what := "Shortcut: "
     }
-    CommitDraft(what (CAP.target = "source" ? KeyLabel(r.vk, r.sc) : ComboLabel(r.mods, r.vk, r.sc)))
+    code := Format("VK {:X} · SC {:X}", r.vk, r.sc)  ; for reports of new laptops: the notice and the log
+    Log("Key pressed for " CAP.target ": " ComboLabel(r.mods, r.vk, r.sc) " (" code ")")
+    CommitDraft(what (CAP.target = "source" ? KeyLabel(r.vk, r.sc) : ComboLabel(r.mods, r.vk, r.sc)), "Saved · " code)
 }
 
 ; ============================================================================
@@ -1730,7 +1731,6 @@ BuildSettings(page, posX := "", posY := "") {
     UI.keyText := Map(), UI.tg := Map(), UI.tgState := Map(), UI.infoTips := Map(), UI.hand := Map()
     UI.widgets := Map(), UI.anims := Map(), UI.hot := 0, UI.frozen := 0, UI.paintOff := false
     UI.pendingDpi := 0, UI.dpiShot := 0, UI.sizing := false, UI.stretchHidden := []
-    UI.kvW := SL.btnX - 10 - SL.kvX
     for p in PAGES
         UI.groups[p[1]] := [], UI.laidOut[p[1]] := UI.dpi
     UI.laidOut[""] := UI.dpi
@@ -1801,93 +1801,31 @@ BuildGeneralPage() {
     NewButton("general", SL.rx - 110, y + 16, 110, "Uninstall…", "danger").OnEvent("Click", (*) => UninstallApp())
 }
 
+; Keys: a picture, not a form. Your key -> what it works as, big keycaps you
+; click to change, three buttons for what the key does; then the shortcut
+; that opens an app (NitroSense by default) as one line. No descriptions or key codes (codes go to the log);
+; the finer options are in Advanced.
 BuildKeysPage() {
-    th := UI.th, x := SL.cx + 16
-    grp := Group("keys", 70, "Remap a key")
-    y := Row(grp, 64)
-    r := RowText("keys", y, 64, "Key", "", SL.kvX - 10 - x)
-    UI.srcDesc := r.desc
-    UI.srcKeys := NewKeyView("source", "keys", SL.kvX, y + 15)
-    UI.srcBtn := NewButton("keys", SL.btnX, y + 16, 96, "Change…")
-    UI.srcBtn.OnEvent("Click", (*) => CaptureToggle("source"))
-    y := Row(grp, 92)
-    RowText("keys", y, 92, "What it does", "", SL.kvX - 10 - x, "", 17)
-    UI.mode := NewList("keys", SL.kvX, y + 13, SL.rx - SL.kvX, MODE_LABELS, OnModeChange)
-    UI.actionInfo := Place("Text", "keys", x, y + 54, SL.rx - x, 20, "0x80 Background" Hex6(th.card), "", 9, "w400", th.sub)
-    first := UI.items.Length + 1
-    y := Row(grp, 64)
-    r := RowText("keys", y, 64, "Sends", "What to press instead.", SL.kvX - 10 - x)
-    UI.targetTitle := r.title, UI.targetDesc := r.desc
-    UI.targetKeys := NewKeyView("target", "keys", SL.kvX, y + 15)
-    UI.targetBtn := NewButton("keys", SL.btnX, y + 16, 96, "Change…")
-    UI.targetBtn.OnEvent("Click", (*) => CaptureToggle("target"))
-    ; The Sends row only exists for "Press another key": SetSendsRow
-    UI.sends := {shown: true, h: 64, grp: grp, div: grp.dividers[grp.dividers.Length], items: ItemsFrom(first)}
+    th := UI.th, bg := " Background" Hex6(th.card)
+    grp := Group("keys", 70)
+    y := Row(grp, 172)
+    colW := 234, lx := SL.cx + 16, rx := SL.rx - colW, mid := SL.cx + SL.cw // 2
+    Place("Text", "keys", lx, y + 18, colW, 20, "0x81" bg, "Your key", 10.5, "w400", th.text)
+    Place("Text", "keys", rx, y + 18, colW, 20, "0x81" bg, "Works as", 10.5, "w400", th.text)
+    UI.srcKeys := NewKeyView("source", "keys", lx, y + 44, colW, 56, true)
+    UI.arrow := Place("Text", "keys", mid - 20, y + 58, 40, 28, "0x81" bg, Chr(0xE72A), 15, "w400", th.sub, UI.iconFont)
+    UI.targetKeys := NewKeyView("target", "keys", rx, y + 44, colW, 56, true)
+    bw := 150, gap := 8, bx := mid - (3 * bw + 2 * gap) // 2
+    UI.modeBtns := []
+    for i, label in MODE_BUTTONS
+        UI.modeBtns.Push(NewButton("keys", bx + (i - 1) * (bw + gap), y + 120, bw, label).OnEvent("Click", SetMode.Bind(i)))
 
-    first := UI.items.Length + 1
-    grp := Group("keys", grp.y + grp.h + 16, "NitroSense shortcut")
-    UI.sends.below := grp
+    grp := Group("keys", grp.y + grp.h + 16, "Open an app with a shortcut")
     y := Row(grp, 64)
-    RowText("keys", y, 64, "Open an app with a shortcut", "By default, Right Ctrl + NitroSense key opens NitroSense.", SL.rx - 50 - x)
+    UI.launchKeys := NewKeyView("launch", "keys", lx, y + 15, 250, 34)
+    UI.opens := Place("Text", "keys", lx + 254, y + 22, 44, 20, "0x80" bg, "opens", 10.5, "w400", th.text)
+    UI.appList := NewList("keys", lx + 300, y + 17, 180, [""], OnAppChange)
     NewSwitch("launchEnabled", "keys", SL.rx - 40, y + 22)
-    y := Row(grp, 64)
-    r := RowText("keys", y, 64, "Shortcut", "", SL.kvX - 10 - x)
-    UI.launchTitle := r.title, UI.launchDesc := r.desc
-    UI.launchKeys := NewKeyView("launch", "keys", SL.kvX, y + 15)
-    UI.launchBtn := NewButton("keys", SL.btnX, y + 16, 96, "Change…")
-    UI.launchBtn.OnEvent("Click", (*) => CaptureToggle("launch"))
-    y := Row(grp, 52)
-    r := RowText("keys", y, 52, "Distinguish left and right modifiers", "", SL.rx - 80 - x
-               , "On: only the exact keys of the shortcut work (for example Right Ctrl).`n"
-               . "Off: the same key on either side works too (Left or Right Ctrl).")
-    UI.sidesTitle := r.title
-    NewSwitch("distinguish", "keys", SL.rx - 40, y + 16)
-    y := Row(grp, 64)
-    r := RowText("keys", y, 64, "App to open", "", SL.btnX - 82 - x)
-    UI.appTitle := r.title, UI.appStatus := r.desc
-    UI.auto := NewButton("keys", SL.btnX - 72, y + 16, 64, "Auto")
-    UI.browse := NewButton("keys", SL.btnX, y + 16, 96, "Browse…")
-    UI.auto.OnEvent("Click", AutoApp)
-    UI.browse.OnEvent("Click", BrowseApp)
-    UI.sends.belowItems := ItemsFrom(first)
-}
-
-ItemsFrom(first) {                      ; the controls added since UI.items[first]
-    out := []
-    loop UI.items.Length - first + 1
-        out.Push(UI.items[first + A_Index - 1])
-    return out
-}
-
-; Shows or hides the Sends row; the rows below move up or down
-SetSendsRow(show) {
-    sd := UI.sends
-    if (sd.shown = show)
-        return
-    sd.shown := show
-    dy := show ? sd.h : -sd.h
-    for item in sd.items {
-        item.hidden := !show
-        item.ctl.Visible := show && UI.page = "keys"
-    }
-    sd.grp.h += dy
-    if show
-        sd.grp.dividers.Push(sd.div)
-    else
-        sd.grp.dividers.Pop()
-    sd.below.y += dy
-    for item in sd.belowItems
-        item.y += dy
-    if (UI.page != "keys") {
-        UI.laidOut["keys"] := 0             ; laid out when the section is shown
-        return
-    }
-    old := PMv2()
-    Freeze(true)
-    LayoutPage("keys")
-    RenderPageBackground()
-    Freeze(false)
-    PMv2(old)
 }
 
 BuildNotificationsPage() {
@@ -1961,6 +1899,13 @@ BuildAdvancedPage() {
           . "keys share a code, like the NitroSense key and Win Lock (Fn+Win) on Acer`n"
           . "laptops. Turn it off only if your key changes its scan code.")
     NewSwitch("matchSC", "advanced", SL.rx - 40, y + 22)
+    y := Row(grp, 52)
+    r := RowText("advanced", y, 52, "Distinguish left and right modifiers", "", SL.rx - 80 - SL.cx - 16
+               , "For the shortcut that opens an app (Keys).`n"
+               . "On: only the exact keys of the shortcut work (for example Right Ctrl).`n"
+               . "Off: the same key on either side works too (Left or Right Ctrl).")
+    UI.sidesTitle := r.title
+    NewSwitch("distinguish", "advanced", SL.rx - 40, y + 16)
     y := Row(grp, 64)
     r := RowText("advanced", y, 64, "Settings file", "", SL.rx - 140 - SL.cx - 16)
     UI.settingsPath := r.desc
@@ -2122,9 +2067,10 @@ NewList(page, x, y, w, items, onChange) {
         .OnEvent("Click", OpenSelect)
 }
 
-; The keys of a shortcut drawn as keycaps; click = same as "Change…"
-NewKeyView(name, page, x, y) {
-    return NewWidget("keys", page, x, y, UI.kvW, 34, {parts: [], listen: false})
+; The keys of a shortcut drawn as keycaps, with a pencil: click to change
+; them (it listens for the next key or shortcut). big: larger and centered.
+NewKeyView(name, page, x, y, w, h, big := false) {
+    return NewWidget("keys", page, x, y, w, h, {parts: [], listen: false, big: big, note: "", faded: false, problem: false})
         .OnEvent("Click", (*) => CaptureToggle(name))
 }
 
@@ -3115,11 +3061,13 @@ OnOff(name, on) => SWITCH_LABELS[name] ": " (on ? "on" : "off")
 ; Applies and saves the draft if it's complete; otherwise the row that needs
 ; something says so and the active settings stay as they were. what = the
 ; title of the "saved" notice.
-CommitDraft(what := "") {
+CommitDraft(what := "", sub := "Saved") {
     global CFG
     UI.problem := ValidateSettings(DRAFT, &where), UI.problemWhere := where
     if (UI.problem != "") {
         RefreshSettings()
+        if !(CAP.active && CAP.target = where)  ; listening for it already says what to do
+            Notice("Not saved yet", UI.problem, "warn", 5000)
         return false
     }
     themeChanged := UI.gui && ThemeName(DRAFT.theme) != UI.themeName
@@ -3141,11 +3089,11 @@ CommitDraft(what := "") {
         Notice("The tray icon is hidden", "To see this window again, open the app again", "info", 6000)
     }
     if themeChanged                         ; rebuilt, but not from inside the control's own event
-        SetTimer(() => (RebuildSettings(), what != "" ? Notice(what) : 0), -1)
+        SetTimer(() => (RebuildSettings(), what != "" ? Notice(what, sub) : 0), -1)
     else {
         RefreshSettings()
         if (what != "")
-            Notice(what)
+            Notice(what, sub)
     }
     return true
 }
@@ -3156,7 +3104,7 @@ RefreshSettings() {
     old := PMv2()
     d := DRAFT, th := UI.th
     listening := CAP.active ? CAP.target : ""
-    isKey := d.mode = "Key", on := d.launchEnabled ? 1 : 0
+    on := d.launchEnabled ? 1 : 0
 
     UI.status.Value := PAUSED ? "Paused" : "Active"
     SetColor(UI.status, PAUSED ? th.warn : th.ok)
@@ -3169,23 +3117,25 @@ RefreshSettings() {
 
     ; Keys
     SetKeyView("source", UI.srcKeys, [], d.sourceVK, d.sourceSC, false, listening = "source")
-    UI.srcBtn.Text := listening = "source" ? "Cancel" : "Change…"
-    UI.mode.Value := ChoiceIndex(MODES, d.mode)
-    UI.actionInfo.Value := ACTION_INFO[d.mode]
-    SetSendsRow(isKey)
-    SetKeyView("target", UI.targetKeys, d.targetMods, d.targetVK, d.targetSC, false, listening = "target")
-    UI.targetBtn.Text := listening = "target" ? "Cancel" : "Change…"
-    RowNote(UI.srcDesc, "source", KeyCode(d.sourceVK, d.sourceSC))
-    RowNote(UI.targetDesc, "target", KeyCode(d.targetVK, d.targetSC))
+    switch d.mode {
+        case "Key":
+            SetKeyView("target", UI.targetKeys, d.targetMods, d.targetVK, d.targetSC, false, listening = "target")
+        case "Disable":                     ; nothing to click: it does nothing
+            UI.keyText["target"] := "Nothing"
+            UI.targetKeys.Update({parts: [], listen: false, note: "Nothing", _enabled: false, faded: false, problem: false})
+        default:                            ; works as itself
+            UI.keyText["target"] := UI.keyText["source"]
+            UI.targetKeys.Update({parts: d.sourceVK ? ComboParts([], d.sourceVK, d.sourceSC) : [], listen: false, note: ""
+                                , _enabled: false, faded: false, problem: false})
+    }
+    for i, btn in UI.modeBtns
+        btn.Update({variant: MODES[i] = d.mode ? "accent" : ""})
 
     SetSwitch("launchEnabled", on)
     SetKeyView("launch", UI.launchKeys, d.launchMods, d.launchVK, d.launchSC, d.launchAnySide, listening = "launch", !on)
-    UI.launchBtn.Update({_text: listening = "launch" ? "Cancel" : "Change…", _enabled: on})
+    SetColor(UI.opens, on ? th.text : th.dim)
     SetSwitch("distinguish", !d.launchAnySide, !on)
-    UI.auto.Enabled := on, UI.browse.Enabled := on
-    for ctl in [UI.launchTitle, UI.sidesTitle, UI.appTitle]
-        SetColor(ctl, on ? th.text : th.dim)
-    RowNote(UI.launchDesc, "launch", KeyCode(d.launchVK, d.launchSC), !on)
+    SetColor(UI.sidesTitle, on ? th.text : th.dim)
     UpdateApp()
 
     ; Notifications
@@ -3206,23 +3156,10 @@ RefreshSettings() {
     PMv2(old)
 }
 
-; A row's description, or what's missing (in red) if the problem is there
-RowNote(ctl, where, normal, dim := false) {
-    th := UI.th
-    if (UI.problemWhere = where) {
-        ctl.Value := where = "target" ? "Click Change… to choose it." : "Add a modifier, e.g. Right Ctrl."
-        SetColor(ctl, th.warn)
-    } else {
-        ctl.Value := normal
-        SetColor(ctl, dim ? th.dim : th.sub)
-    }
-}
-
-KeyCode(vk, sc) => vk ? Format("Code: VK {:X} · SC {:X}", vk, sc) : "Not set yet"
-
 SetKeyView(name, wd, mods, vk, sc, anySide, listen, dim := false) {
     UI.keyText[name] := listen ? "listening" : vk ? ComboLabel(mods, vk, sc, anySide) : "Not set"
-    wd.Update({parts: vk ? ComboParts(mods, vk, sc, anySide) : [], listen: listen, _enabled: !dim})
+    wd.Update({parts: vk ? ComboParts(mods, vk, sc, anySide) : [], listen: listen, note: "", _enabled: !dim, faded: dim
+             , problem: UI.problemWhere = name})
 }
 
 ; Sets a switch; a change of state slides the knob (not on the first draw)
@@ -3249,32 +3186,33 @@ ChoiceIndex(list, value) {
     return 1
 }
 
+; The app the shortcut opens, as a drop-down list: NitroSense (found
+; automatically), the app the user chose, or "Choose another app…"
 UpdateApp() {
     if !UI.gui
         return
-    p := DRAFT.launchPath, th := UI.th, color := th.sub
-    if (p = "auto") {
-        name := NS.label != "" ? NS.label : "NitroSense"
-        if !NS.checked
-            status := "Looking for it…"
-        else if (NS.target != "") {
-            SplitPath(NS.target, &file)
-            status := SubStr(NS.target, 1, 6) = "shell:" ? "found automatically" : "found automatically (" file ")"
-            color := th.ok
-        } else
-            status := "not found: click Browse…", color := th.warn
-        status := name ", " status
-    } else if (SubStr(p, 1, 6) = "shell:") {
-        status := "An app from the Apps folder (chosen by you)"
-    } else {
-        SplitPath(p, &file)
-        if FileExist(p)
-            status := file " (chosen by you)"
-        else
-            status := file ": file not found, click Browse…", color := th.warn
+    p := DRAFT.launchPath
+    name := NS.label != "" ? NS.label : "NitroSense"
+    auto := !NS.checked ? name "…" : NS.target != "" ? name : name " (missing)"
+    if (p = "auto")
+        items := [auto, APP_CHOOSE]
+    else {
+        SplitPath(p, , , , &file)
+        mine := SubStr(p, 1, 6) = "shell:" ? "Your app" : FileExist(p) ? file : file " (missing)"
+        items := [mine, auto, APP_CHOOSE]
     }
-    UI.appStatus.Value := status
-    SetColor(UI.appStatus, DRAFT.launchEnabled ? color : th.dim)
+    UI.appList.Update({items: items, _value: 1, _enabled: DRAFT.launchEnabled})
+}
+
+APP_CHOOSE := "Choose another app…"
+
+OnAppChange(wd, *) {
+    chosen := wd.items[wd.Value]
+    if (chosen = APP_CHOOSE)
+        BrowseApp()
+    else if (DRAFT.launchPath != "auto" && wd.Value = 2)
+        AutoApp()
+    UpdateApp()                             ; back to the current choice if cancelled
 }
 
 UpdateUpdatesRow() {
@@ -3308,11 +3246,15 @@ DetectForApp() {
 
 ; ---- Window -> settings ----------------------------------------------------------
 
-OnModeChange(ctl, *) {
-    DRAFT.mode := MODES[ctl.Value]
+SetMode(i, *) {
+    if (DRAFT.mode = MODES[i])
+        return
+    DRAFT.mode := MODES[i]
     if (CAP.active && CAP.target = "target" && DRAFT.mode != "Key")
         CaptureCancel()
-    CommitDraft("The key: " MODE_LABELS[ctl.Value])
+    CommitDraft("The key: " MODE_LABELS[i])
+    if (DRAFT.mode = "Key" && !DRAFT.targetVK && !CAP.active)
+        CaptureToggle("target")             ; no key chosen yet: listen for it right away
 }
 
 OnThemeChange(ctl, *) {
@@ -3428,14 +3370,14 @@ PreviewToast(*) {
 ValidateSettings(d, &where := "") {
     where := ""
     if (d.mode != "None" && !d.sourceVK)
-        return (where := "source", "Choose the key to remap first: click Change… next to Key.")
+        return (where := "source", "Click Your key to choose the key to remap.")
     if (d.mode = "Key" && !d.targetVK)
-        return (where := "target", "Choose the key or shortcut to send: click Change… next to Sends.")
+        return (where := "target", "Click Works as to choose the key it works as.")
     if d.launchEnabled {
         if !d.launchVK
-            return (where := "launch", "Choose the shortcut that opens NitroSense, or turn it off.")
+            return (where := "launch", "Choose the shortcut that opens the app, or turn it off.")
         if (!d.launchMods.Length && d.mode != "None" && SameKey(d.launchVK, d.launchSC, d.sourceVK, d.sourceSC))
-            return (where := "launch", "The shortcut to open NitroSense is the key you are remapping, so the remap would never run. Add a modifier, for example Right Ctrl.")
+            return (where := "launch", "The shortcut is the key you remap: add a modifier, like Right Ctrl.")
     }
     return ""
 }
@@ -3832,52 +3774,68 @@ DrawAppIcon(hbm, x, y, size) {          ; DrawIconEx keeps the icon's alpha (GDI
     DllCall("DeleteDC", "ptr", hdc)
 }
 
-; A key or shortcut as keycaps. Hover darkens their edge; pressed, they go down.
+; A key or shortcut as keycaps. Hover darkens their edge; pressed, they go
+; down. A pencil after them says "click to change". big: larger, centered.
+; note: a word instead of keys ("Nothing"). problem: what's missing is here.
 RenderKeys(wd) {
-    th := UI.th, k := UI.k, parts := wd.parts, dim := !wd._enabled
+    th := UI.th, k := UI.k, parts := wd.parts, dim := wd.faded, big := wd.big
     cv := Canvas(wd.lw, wd.lh, th.card), g := cv.g
-    famR := FontFamily("Segoe UI"), famSB := FontFamily("Segoe UI Semibold")
+    famR := FontFamily("Segoe UI"), famSB := FontFamily("Segoe UI Semibold"), famI := FontFamily(UI.iconFont)
     fam := famSB ? famSB : famR
     fmtL := NewFormat(0), fmtC := NewFormat(1)
-    font := 0, avail := cv.w
-    capH := Round(26 * k), y0 := Round((cv.h - capH) / 2 - k), rad := 6 * k
-    down := !dim && wd.press && wd.hover ? 2 * k : 0
-    edge := !dim && wd.hover ? th.sub : th.keyEdge
+    font := 0, fi := 0, pencil := wd._enabled && !wd.listen
+    penW := pencil && famI ? Round((big ? 30 : 26) * k) : 0
+    avail := cv.w - penW
+    capH := Round((big ? 44 : 26) * k), y0 := Round((cv.h - capH) / 2 - k), rad := (big ? 8 : 6) * k
+    down := wd._enabled && wd.press && wd.hover ? 2 * k : 0
+    edge := wd.problem ? th.warn : wd._enabled && wd.hover ? th.sub : th.keyEdge
+    endX := 0
     if wd.listen {
-        font := GT_Font(fam, 12.5 * k, 0), text := "Press a key or shortcut…"
-        cw := Min(avail - 2 * k, GT_MeasureW(g, text, font, fmtL) + 26 * k)
-        FillPathFree(g, GT_RoundPath(k, y0, cw, capH + 2 * k, rad), Argb(th.accent, 0x24))
-        StrokePathFree(g, GT_RoundPath(k, y0, cw, capH + 2 * k, rad), Argb(th.accent), 1.5 * k)
-        GT_Text(g, text, font, Argb(th.accent), k, y0, cw, capH + 2 * k, fmtC)
-    } else if !parts.Length {
-        font := GT_Font(famR, 13 * k, 0)
-        GT_Text(g, "Not set: click Change…", font, Argb(th.sub), 0, 0, avail, cv.h, fmtL)
+        font := GT_Font(fam, (big ? 14 : 12.5) * k, 0), text := "Press a key or shortcut…"
+        cw := Min(cv.w - 2 * k, GT_MeasureW(g, text, font, fmtL) + 26 * k)
+        x := big ? (cv.w - cw) / 2 : k
+        FillPathFree(g, GT_RoundPath(x, y0, cw, capH + 2 * k, rad), Argb(th.accent, 0x24))
+        StrokePathFree(g, GT_RoundPath(x, y0, cw, capH + 2 * k, rad), Argb(th.accent), 1.5 * k)
+        GT_Text(g, text, font, Argb(th.accent), x, y0, cw, capH + 2 * k, fmtC)
+    } else if (wd.note != "" || !parts.Length) {
+        font := GT_Font(famR, (big ? 16 : 13) * k, 0)
+        text := wd.note != "" ? wd.note : "Choose a key"
+        color := wd.note != "" ? th.sub : wd.problem ? th.warn : th.accent
+        tw := GT_MeasureW(g, text, font, fmtL) + 4 * k
+        x := big ? (avail - tw) / 2 + penW / 2 : 0
+        GT_Text(g, text, font, Argb(color), x, 0, tw, cv.h, fmtL)
+        endX := x + tw
     } else {
-        size := 13
+        size := big ? 17 : 13, padX := (big ? 28 : 20) * k
         loop {                              ; shrink the text if the shortcut is long
             font := GT_Font(fam, size * k, 0)
             plusW := GT_MeasureW(g, "+", font, fmtL) + 12 * k, total := 0
             for i, part in parts
-                total += GT_MeasureW(g, part, font, fmtL) + 20 * k + (i > 1 ? plusW : 0)
-            if (total <= avail || size <= 10)
+                total += GT_MeasureW(g, part, font, fmtL) + padX + (i > 1 ? plusW : 0)
+            if (total <= avail - 2 * k || size <= 10)
                 break
             DllCall("gdiplus\GdipDeleteFont", "ptr", font)
             size -= 1
         }
-        x := k
+        x := big ? Max(k, (avail - total) / 2 + penW / 2) : k
         for i, part in parts {
             if (i > 1) {
                 GT_Text(g, "+", font, Argb(th.sub), x, 0, plusW, cv.h, fmtC)
                 x += plusW
             }
-            capW := GT_MeasureW(g, part, font, fmtL) + 20 * k
+            capW := GT_MeasureW(g, part, font, fmtL) + padX
             FillPathFree(g, GT_RoundPath(x, y0 + 2 * k, capW, capH, rad), Argb(th.keyShade))
             FillPathFree(g, GT_RoundPath(x, y0 + down, capW, capH, rad), Argb(th.keyFace))
-            StrokePathFree(g, GT_RoundPath(x + 0.5, y0 + down + 0.5, capW - 1, capH - 1, rad), Argb(edge), 1)
+            StrokePathFree(g, GT_RoundPath(x + 0.5, y0 + down + 0.5, capW - 1, capH - 1, rad), Argb(edge), wd.problem ? 1.5 * k : 1)
             GT_Text(g, part, font, Argb(th.keyText), x, y0 + down, capW, capH, fmtC)
             x += capW
         }
+        endX := x
     }
-    FreeAll([font], [fmtL, fmtC])
+    if penW {                               ; "click to change"
+        fi := GT_Font(famI, (big ? 14 : 12) * k, 0)
+        GT_Text(g, Chr(0xE70F), fi, Argb(wd.hover ? th.text : th.sub), endX + 8 * k, 0, penW, cv.h, fmtL)
+    }
+    FreeAll([font, fi], [fmtL, fmtC])
     return CanvasDone(cv, th.card, dim)
 }

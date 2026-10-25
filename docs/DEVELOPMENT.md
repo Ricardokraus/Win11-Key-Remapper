@@ -468,7 +468,7 @@ The tests cover the logic; this needs real keys:
 - [ ] NitroSense key → Num Lock toggles once per press, also when held; Caps Lock too.
 - [ ] Win Lock (Fn+Win) still works and doesn't touch Num Lock.
 - [ ] Right Ctrl + NitroSense key opens NitroSense; Left Ctrl + key toggles Num Lock.
-- [ ] *Change…* captures a single key, a combo, and a lone modifier (Right Ctrl);
+- [ ] Clicking a key captures a single key, a combo, and a lone modifier (Right Ctrl);
   Right Ctrl + Num Lock is captured as that, not as Pause.
 - [ ] *What it does*: *Does nothing* / *Works as usual* hide the *Sends* row.
 - [ ] Drop-down lists: open under the control (above it near the bottom of the
