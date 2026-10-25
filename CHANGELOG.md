@@ -12,10 +12,11 @@ uses [Semantic Versioning](https://semver.org/).
   double-click. It's the official AutoHotkey v2 runtime, unmodified and only
   renamed (with its license), which runs the app's script through a small
   launcher; Windows' Smart App Control lets it run.
-- **Installer (preview)**: `Win11KeyRemapper-Setup` installs the same files per
-  user (no admin), with a Start menu shortcut and an entry in *Installed apps*.
-  It will be signed through SignPath Foundation once the project is approved;
-  until then Windows may block or warn about it.
+- **Installer (preview, doesn't work yet on most PCs)**: `Win11KeyRemapper-Setup`
+  installs the same files per user (no admin), with a Start menu shortcut and an
+  entry in *Installed apps*. It isn't signed yet, so Smart App Control blocks it:
+  use the zip. It will be signed through SignPath Foundation once the project is
+  approved.
 - **Uninstall** (Settings → *General* → *Uninstall…*, or *Installed apps*):
   removes the app's files, its shortcuts, its log, any update download and its
   *Installed apps* entry, and asks whether to delete the settings too.
