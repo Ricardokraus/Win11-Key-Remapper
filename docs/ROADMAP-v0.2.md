@@ -2,7 +2,7 @@
 
 > Shipped as **v0.5.0**: the version number was raised before the release.
 > Since then the exe is no longer published (Smart App Control blocks unsigned
-> exes): see "The exe (pending)" in DEVELOPMENT.md.
+> exes): see "The release: a runtime instead of an exe" in DEVELOPMENT.md.
 
 Decisions taken with the user:
 

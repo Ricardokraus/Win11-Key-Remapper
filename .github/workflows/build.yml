@@ -10,34 +10,54 @@ on:
 permissions:
   contents: write   # create and publish releases on tags
 
-# The release is the script itself, run with AutoHotkey v2: no exe for now.
-# Windows 11's Smart App Control blocks unsigned exes with no way to allow
-# them; AutoHotkey is signed. A signed exe is planned (docs/DEVELOPMENT.md).
+# What a release contains:
+# - Win11KeyRemapper-vX.Y.Z.zip: the app, ready to run. Win11KeyRemapper.exe
+#   in it is the official AutoHotkey v2 runtime (AutoHotkey64.exe), unmodified,
+#   only renamed: it runs Win11KeyRemapper.ahk next to it (the launcher), which
+#   starts src\Win11KeyRemapper.ahk. Nothing to install, and Smart App Control
+#   trusts that runtime (it blocks unknown unsigned exes, like a compiled script).
+# - Win11KeyRemapper-Setup-vX.Y.Z.exe: the same files, installed per user. It's
+#   signed through SignPath Foundation once the project is approved: until the
+#   SIGNPATH_API_TOKEN secret exists it's published unsigned (Smart App Control
+#   blocks it; use the zip).
+# - SHA256SUMS.txt.
+env:
+  AHK_VERSION: '2.0.31'       # pinned: tested under Smart App Control, see docs/DEVELOPMENT.md
+  INNO_TAG: 'is-7_1_0'
+  INNO_FILE: 'innosetup-7.1.0-x64.exe'
+
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v7
 
-      - name: Download AutoHotkey v2
+      - name: Download AutoHotkey and Inno Setup
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Official GitHub releases. autohotkey.com sits behind Cloudflare,
-          # which can block CI runners. The zip is the same file.
+          # Official GitHub releases (autohotkey.com sits behind Cloudflare,
+          # which can block CI runners)
           $tools = "$env:RUNNER_TEMP\tools"
           New-Item -ItemType Directory -Force $tools | Out-Null
-          $tag = gh release list -R AutoHotkey/AutoHotkey --exclude-pre-releases --limit 30 --json tagName --jq '.[].tagName' |
-                 Where-Object { $_ -like 'v2.*' } | Select-Object -First 1
-          if (-not $tag) { Write-Error 'No AutoHotkey v2 release found'; exit 1 }
-          gh release download $tag -R AutoHotkey/AutoHotkey -p 'AutoHotkey_*.zip' -D $tools
+          gh release download "v$env:AHK_VERSION" -R AutoHotkey/AutoHotkey -p "AutoHotkey_$env:AHK_VERSION.zip" -D $tools
           if ($LASTEXITCODE) { exit 1 }
-          Expand-Archive (Get-Item "$tools\AutoHotkey_*.zip").FullName "$tools\ahk" -Force
+          Expand-Archive "$tools\AutoHotkey_$env:AHK_VERSION.zip" "$tools\ahk" -Force
           "AHK=$tools\ahk\AutoHotkey64.exe" >> $env:GITHUB_ENV
-          (Get-Item "$tools\ahk\AutoHotkey64.exe").VersionInfo.ProductVersion
+          "AHK_DIR=$tools\ahk" >> $env:GITHUB_ENV
+          gh release download $env:INNO_TAG -R jrsoftware/issrc -p $env:INNO_FILE -D $tools
+          if ($LASTEXITCODE) { exit 1 }
+          $sig = Get-AuthenticodeSignature "$tools\$env:INNO_FILE"
+          if ($sig.Status -ne 'Valid') { Write-Error "Inno Setup installer signature: $($sig.Status)"; exit 1 }
+          $p = Start-Process "$tools\$env:INNO_FILE" -Wait -PassThru -ArgumentList `
+                 '/VERYSILENT', '/SUPPRESSMSGBOXES', '/CURRENTUSER', '/PORTABLE=1', '/NOICONS', "/DIR=`"$tools\inno`""
+          if ($p.ExitCode -ne 0) { exit 1 }
+          "ISCC=$tools\inno\ISCC.exe" >> $env:GITHUB_ENV
 
       - name: Check syntax
         run: |
@@ -63,25 +83,84 @@ jobs:
               Write-Error "Tag $env:GITHUB_REF_NAME doesn't match the version in the script ($version)"
               exit 1
             }
-            $name = "Win11KeyRemapper-v$version"
+            $suffix = "v$version"
           } else {
-            $name = "Win11KeyRemapper-v$version-dev-$($env:GITHUB_SHA.Substring(0, 7))"
+            $suffix = "v$version-dev-$($env:GITHUB_SHA.Substring(0, 7))"
           }
-          # Only what's needed to run it: src\ (the app) and assets\icon.ico
-          # (its tray and window icon, found as ..\assets from src\)
+          $name = "Win11KeyRemapper-$suffix"
+          # The layout PACKAGE_FILES in the app lists (its uninstall removes them)
           $dir = "dist\$name"
-          New-Item -ItemType Directory -Force "$dir\src\lib", "$dir\assets" | Out-Null
+          New-Item -ItemType Directory -Force "$dir\src\lib", "$dir\assets", "$dir\docs" | Out-Null
+          Copy-Item "$env:AHK_DIR\AutoHotkey64.exe" "$dir\Win11KeyRemapper.exe"
+          Copy-Item "$env:AHK_DIR\license.txt" "$dir\AutoHotkey-license.txt"
+          Copy-Item package\Win11KeyRemapper.ahk $dir
           Copy-Item src\Win11KeyRemapper.ahk "$dir\src"
           Copy-Item src\lib\GlassToast.ahk "$dir\src\lib"
           Copy-Item assets\icon.ico "$dir\assets"
           Copy-Item README.md, LICENSE, CHANGELOG.md, settings.example.ini, SUPPORT.md, SECURITY.md $dir
-          New-Item -ItemType Directory -Force "$dir\docs" | Out-Null
           Copy-Item docs\FAQ.md, docs\TESTED-MODELS.md "$dir\docs"     # linked from the README
+          # Every file the app's uninstall knows, and nothing else
+          $listed = [regex]::Matches((Get-Content src\Win11KeyRemapper.ahk -Raw), '(?s)PACKAGE_FILES := \[(.*?)\]').Groups[1].Value
+          $expected = [regex]::Matches($listed, '"([^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object
+          $actual = Get-ChildItem $dir -Recurse -File | ForEach-Object { $_.FullName.Replace("$PWD\$dir\", '') } | Sort-Object
+          if (Compare-Object $expected $actual) {
+            Compare-Object $expected $actual | Format-Table | Out-String | Write-Host
+            Write-Error 'The release files and PACKAGE_FILES in the app differ'
+            exit 1
+          }
           Compress-Archive "$dir\*" "dist\$name.zip" -Force
-          $sums = "$((Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLower())  $name.zip"
+          & $env:ISCC /Q "/DAppVersion=$version" "/DSourceDir=$PWD\$dir" installer\Win11KeyRemapper.iss
+          if ($LASTEXITCODE) { exit 1 }
+          $setup = "Win11KeyRemapper-Setup-v$version.exe"
+          if ($suffix -ne "v$version") {
+            Move-Item "dist\$setup" "dist\Win11KeyRemapper-Setup-$suffix.exe"
+            $setup = "Win11KeyRemapper-Setup-$suffix.exe"
+          }
+          "name=$name" >> $env:GITHUB_OUTPUT
+          "setup=$setup" >> $env:GITHUB_OUTPUT
+
+      - name: Smoke test (the zip's exe, install, uninstall)
+        run: ./tools/smoke-test.ps1 -Package "dist\${{ steps.package.outputs.name }}" -Setup "dist\${{ steps.package.outputs.setup }}"
+
+      # ---- Signing (SignPath Foundation), only once it's set up ----
+      - name: Upload the installer to sign
+        id: unsigned
+        if: github.ref_type == 'tag' && env.SIGNPATH_API_TOKEN != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-setup
+          path: dist/${{ steps.package.outputs.setup }}
+
+      - name: Sign the installer (approve it in SignPath)
+        if: github.ref_type == 'tag' && env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: dist/signed
+
+      - name: Use the signed installer
+        if: github.ref_type == 'tag' && env.SIGNPATH_API_TOKEN != ''
+        run: |
+          $signed = "dist\signed\${{ steps.package.outputs.setup }}"
+          $sig = Get-AuthenticodeSignature $signed
+          if ($sig.Status -ne 'Valid') { Write-Error "Signed installer: $($sig.Status)"; exit 1 }
+          "Signed by: $($sig.SignerCertificate.Subject)"
+          Move-Item $signed "dist\${{ steps.package.outputs.setup }}" -Force
+
+      - name: Checksums
+        run: |
+          $files = "dist\${{ steps.package.outputs.name }}.zip", "dist\${{ steps.package.outputs.setup }}"
+          $sums = foreach ($f in Get-Item $files) { "$((Get-FileHash $f -Algorithm SHA256).Hash.ToLower())  $($f.Name)" }
           $sums | Set-Content dist\SHA256SUMS.txt -Encoding ascii
           $sums
-          "name=$name" >> $env:GITHUB_OUTPUT
+          $signed = (Get-AuthenticodeSignature "dist\${{ steps.package.outputs.setup }}").Status -eq 'Valid'
+          "SETUP_SIGNED=$signed" >> $env:GITHUB_ENV
 
       - name: Upload build
         if: github.ref_type != 'tag'
@@ -90,6 +169,7 @@ jobs:
           name: ${{ steps.package.outputs.name }}
           path: |
             dist/${{ steps.package.outputs.name }}.zip
+            dist/${{ steps.package.outputs.setup }}
             dist/SHA256SUMS.txt
           retention-days: 14
 
@@ -101,13 +181,19 @@ jobs:
         with:
           draft: true
           body: |
-            **How to use it:** install [AutoHotkey v2](https://www.autohotkey.com/) (free), extract
-            `${{ steps.package.outputs.name }}.zip` to a folder you'll keep and double-click
-            `src\Win11KeyRemapper.ahk`. Updating: click *Exit* in the app, extract the new zip over
-            the old folder (your `settings.ini` stays) and open it again.
-            Details in the [README](https://github.com/${{ github.repository }}#installation).
+            **How to use it:** download `${{ steps.package.outputs.name }}.zip`, extract it to a folder
+            you'll keep (for example `Documents\Win11KeyRemapper`) and double-click
+            **`Win11KeyRemapper.exe`**. Nothing to install, no AutoHotkey needed: that exe is the
+            official AutoHotkey runtime, which runs the app's script.
+            ${{ env.SETUP_SIGNED == 'True' && '**Installer:** `Win11KeyRemapper-Setup` installs it for you, with a Start menu shortcut and an uninstaller in Installed apps.' || '**Installer (preview):** `Win11KeyRemapper-Setup` is not signed yet, so Windows may block or warn about it; the zip works everywhere. A signed installer is on the way.' }}
+
+            **Updating:** click *Exit* in the app, extract the new zip over the old folder (your
+            `settings.ini` stays) and open it again. Details in the
+            [README](https://github.com/${{ github.repository }}#installation) ·
+            [Code signing policy](https://github.com/${{ github.repository }}#code-signing-policy).
           files: |
             dist/${{ steps.package.outputs.name }}.zip
+            dist/${{ steps.package.outputs.setup }}
             dist/SHA256SUMS.txt
           generate_release_notes: true
           fail_on_unmatched_files: true

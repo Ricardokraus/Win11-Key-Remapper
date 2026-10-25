@@ -45,6 +45,13 @@ APP := {name: "Windows 11 Key Remapper", short: "Key Remapper", version: "0.5.4"
 ; recognized so an older copy that's running is found too).
 INSTANCE_TITLE := "Windows 11 Key Remapper"
 INSTANCE_TITLES := [INSTANCE_TITLE, "Win11KeyRemapper.Instance"]
+; Uninstall (UninstallApp): the release's files, relative to the folder above
+; src\, the Installed apps entry and the shortcuts the installer creates
+PACKAGE_FILES := ["Win11KeyRemapper.exe", "Win11KeyRemapper.ahk", "AutoHotkey-license.txt", "README.md", "LICENSE"
+    , "CHANGELOG.md", "settings.example.ini", "SUPPORT.md", "SECURITY.md", "docs\FAQ.md", "docs\TESTED-MODELS.md"
+    , "assets\icon.ico", "src\lib\GlassToast.ahk", "src\Win11KeyRemapper.ahk"]
+UNINSTALL_KEY := "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Win11KeyRemapper"
+UNINSTALL_LNKS := [A_Programs "\Windows 11 Key Remapper.lnk", A_Desktop "\Windows 11 Key Remapper.lnk"]
 INSTANCE_MSG := DllCall("RegisterWindowMessage", "str", "Win11KeyRemapper.ShowSettings", "uint")
 
 ; A key-down that arrives this soon after the previous one, without a key-up
@@ -264,6 +271,12 @@ Main() {
     global SETTINGS_PATH, CFG, POWER_NOTIFY
     t0 := A_TickCount
     args := ParseArgs()
+    if args.uninstall {                     ; from Installed apps: only that, then exit
+        SETTINGS_PATH := SettingsPath()
+        CFG := FileExist(SETTINGS_PATH) ? LoadSettings(SETTINGS_PATH) : DefaultSettings()
+        UninstallApp(true, args.quiet, args.deleteSettings)
+        ExitApp
+    }
     if args.restartPid {
         try ProcessWaitClose(args.restartPid, 5)    ; restart/update: let the old copy exit first
     } else if (other := OtherInstance()) {
@@ -330,14 +343,22 @@ Main() {
 }
 
 ; --restart <pid>: started by Restart or by an update; --updated: show "Updated";
-; --settings <section> <x> <y>: reopen the settings window there
+; --settings <section> <x> <y>: reopen the settings window there;
+; --uninstall: from Windows' Installed apps (see UninstallApp), with --quiet:
+; no questions (the settings stay unless --delete-settings)
 ParseArgs() {
-    out := {restartPid: 0, updated: false, settings: "", x: "", y: ""}
+    out := {restartPid: 0, updated: false, settings: "", x: "", y: "", uninstall: false, quiet: false, deleteSettings: false}
     for i, arg in A_Args {
         if (arg = "--restart" && i < A_Args.Length) {
             try out.restartPid := Integer(A_Args[i + 1])
         } else if (arg = "--updated")
             out.updated := true
+        else if (arg = "--uninstall")
+            out.uninstall := true
+        else if (arg = "--quiet")
+            out.quiet := true
+        else if (arg = "--delete-settings")
+            out.deleteSettings := true
         else if (arg = "--settings" && i + 3 <= A_Args.Length) {
             for p in PAGES
                 if (p[1] = A_Args[i + 1])
@@ -408,6 +429,73 @@ AppExit(reason, code) {
     if POWER_NOTIFY
         DllCall("UnregisterPowerSettingNotification", "ptr", POWER_NOTIFY)
     Log("Exit (" reason ", code " code "), cleaned up in " A_TickCount - t " ms")
+}
+
+; ---- Uninstall ---------------------------------------------------------------
+; The same for the installed app and the zip. Windows' Installed apps runs
+; the app with --uninstall: the installer registers that instead of its own
+; uninstaller, which would be an unsigned exe made on the user's PC, blocked by
+; Smart App Control. Settings > General > Uninstall does the same from the
+; zip. Everything the app created goes: its files, the Start with Windows and
+; Start menu shortcuts, the log, an update download, the Installed apps
+; entry; settings.ini only if the user says so. The running exe can't delete
+; itself: a hidden cmd removes it and the empty folders once the app exited.
+
+UninstallApp(fromWindows := false, quiet := false, delSettings := false) {
+    root := FullPath(A_ScriptDir "\..")
+    if DirExist(root "\.git") {
+        if !quiet
+            Dialog("This is a development copy (a git repository): uninstalling would delete its source files.`n`n"
+                 . "To stop it, click Exit; to remove it, delete its folder.", "Icon!")
+        return false
+    }
+    SplitPath(SETTINGS_PATH, , &dir)
+    if !quiet {
+        if (Dialog("Uninstall " APP.name "?`n`nThe app, its Start with Windows and Start menu shortcuts, its log and "
+                 . "its entry in Installed apps are removed.", "YesNo Icon? Default2") != "Yes")
+            return false
+        delSettings := Dialog("Delete your settings too?`n`nYes: nothing of the app is left.`nNo: settings.ini stays in " dir
+                            . ", to be used if you install the app again.", "YesNo Icon? Default2") = "Yes"
+    }
+    Log("Uninstalling (" (delSettings ? "deleting" : "keeping") " the settings)")
+    SetLog(false)                           ; the log goes too: don't write it again
+    if fromWindows && (other := OtherInstance()) {     ; the running copy exits first
+        DllCall("PostMessage", "ptr", other, "uint", 0x111, "ptr", 65307, "ptr", 0)   ; WM_COMMAND: Exit
+        prev := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try WinWaitClose("ahk_id " other, , 5)
+        DetectHiddenWindows(prev)
+    }
+    UninstallFiles(root, delSettings)
+    ; Then, with this process gone: the exe running it and the empty folders
+    cmd := 'ping 127.0.0.1 -n 3 >nul & del /f /q "' root '\Win11KeyRemapper.exe"'
+    for sub in ["src\lib", "src", "assets", "docs", ""]
+        cmd .= ' & rmdir "' root (sub != "" ? "\" sub : "") '"'
+    try Run(A_ComSpec ' /c "' cmd '"', A_Temp, "Hide")
+    if !quiet
+        Dialog(APP.name " was uninstalled." (delSettings ? "" : "`n`nYour settings are still in " dir "."), "Iconi")
+    ExitApp
+}
+
+; Deletes what the app created, except the exe running it (UninstallApp)
+UninstallFiles(root, delSettings) {
+    for file in PACKAGE_FILES
+        if (file != "Win11KeyRemapper.exe")
+            try FileDelete(root "\" file)
+    for lnk in UNINSTALL_LNKS
+        try FileDelete(lnk)
+    try FileDelete(APP.lnk)
+    log := LogPath()
+    for file in [log, RegExReplace(log, "\.log$", ".old.log"), SETTINGS_PATH ".tmp", A_ScriptFullPath ".old"]
+        try FileDelete(file)
+    try DirDelete(A_Temp "\Win11KeyRemapper-update", true)
+    if delSettings {
+        try FileDelete(SETTINGS_PATH)
+        try DirDelete(APP.dataDir, true)
+    }
+    try RegDeleteKey(UNINSTALL_KEY)
+    for sub in ["docs", "assets", "src\lib", "src"]
+        try DirDelete(root "\" sub)         ; only if empty
 }
 
 ; ---- Shutdown ----------------------------------------------------------------
@@ -1624,6 +1712,9 @@ BuildGeneralPage() {
     y := Row(grp, 64)
     RowText("general", y, 64, "Exit the app", "Keys work as usual until you open it again.", 420)
     NewButton("general", SL.rx - 110, y + 16, 110, "Exit", "danger").OnEvent("Click", (*) => ExitApp())
+    y := Row(grp, 64)
+    RowText("general", y, 64, "Uninstall the app", "Removes it and everything it created. It asks about your settings.", 420)
+    NewButton("general", SL.rx - 110, y + 16, 110, "Uninstall…", "danger").OnEvent("Click", (*) => UninstallApp())
 }
 
 BuildKeysPage() {
@@ -1769,6 +1860,10 @@ BuildAdvancedPage() {
     r := RowText("advanced", y, 64, "Settings file", "", SL.rx - 140 - SL.cx - 16)
     UI.settingsPath := r.desc
     NewButton("advanced", SL.rx - 130, y + 16, 130, "Open folder").OnEvent("Click", (*) => OpenSettingsFolder())
+    y := Row(grp, 64)
+    RowText("advanced", y, 64, "Back up your settings", "Save them to a file, or load them on this or another PC.", 330)
+    NewButton("advanced", SL.rx - 220, y + 16, 104, "Export…").OnEvent("Click", ExportClick)
+    NewButton("advanced", SL.rx - 104, y + 16, 104, "Import…").OnEvent("Click", ImportClick)
     y := Row(grp, 64)
     RowText("advanced", y, 64, "Reset all settings", "Puts every option back to its default value.", 400)
     NewButton("advanced", SL.rx - 110, y + 16, 110, "Reset…", "danger").OnEvent("Click", ResetSettings)
@@ -3135,6 +3230,59 @@ BrowseApp(*) {
         SplitPath(file, &name)
         CommitDraft("App to open: " name)
     }
+}
+
+; ---- Export / import settings ----------------------------------------------------
+; A copy of settings.ini (explained, like the original) to keep or move to
+; another PC; importing checks it and applies it at once, like any change.
+
+ExportClick(*) {
+    old := PMv2()
+    UI.gui.Opt("+OwnDialogs")
+    file := FileSelect("S16", A_MyDocuments "\Win11KeyRemapper settings.ini", "Export settings", "Settings (*.ini)")
+    PMv2(old)                               ; S16: ask before replacing a file
+    if (file = "")
+        return
+    if !RegExMatch(file, "i)\.ini$")
+        file .= ".ini"
+    try {
+        ExportSettings(file)
+        SplitPath(file, &name)
+        Notice("Settings exported", name)
+    } catch as e
+        Notice("Couldn't export the settings", e.Message, "warn", 5000)
+}
+
+ImportClick(*) {
+    old := PMv2()
+    UI.gui.Opt("+OwnDialogs")
+    file := FileSelect(3, A_MyDocuments, "Import settings", "Settings (*.ini)")   ; must exist
+    PMv2(old)
+    if (file = "")
+        return
+    problem := ImportSettings(file)
+    if (problem != "")
+        Notice("Couldn't import the settings", problem, "warn", 6000)
+}
+
+ExportSettings(path) => WriteSettings(path, CFG)
+
+; "" if imported and applied, otherwise what's wrong
+ImportSettings(path) {
+    global DRAFT
+    try text := FileRead(path)
+    catch
+        return "The file can't be read."
+    if !RegExMatch(text, "m)^\s*\[(Remap|Launcher|General)\]")
+        return "It isn't a settings file of this app."
+    c := LoadSettings(path)
+    if ((problem := ValidateSettings(c)) != "")
+        return problem
+    CaptureCancel()
+    DRAFT := c
+    SplitPath(path, &name)
+    Log("Settings imported from " path)
+    return CommitDraft("Settings imported from " name) ? "" : "It couldn't be applied."
 }
 
 ResetSettings(*) {

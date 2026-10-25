@@ -36,34 +36,36 @@ is a tiny tray app that gives that key a better job — or any other key you pic
 <a name="installation"></a>
 ## 🚀 Get started
 
-The app is an [AutoHotkey v2](https://www.autohotkey.com/) script. AutoHotkey is
-free, open source and signed, so it also runs with Windows 11's *Smart App
-Control* on.
-
-> [!NOTE]
-> A standalone installer that doesn't need AutoHotkey is on the way. It isn't
-> available yet because Windows blocks unsigned apps like it, and signing it
-> takes some extra steps. [More details](docs/FAQ.md#why-no-exe)
-
-1. Install [AutoHotkey v2](https://www.autohotkey.com/) (*Download v2.0* → run
-   the installer, default options).
-
-2. Download `Win11KeyRemapper-vX.Y.Z.zip` from the
+1. Download `Win11KeyRemapper-vX.Y.Z.zip` from the
    [latest release](https://github.com/Ricardokraus/Win11-Key-Remapper-Acer-Nitrosense/releases/latest)
    and extract it to a folder you'll keep, for example `Documents\Win11KeyRemapper`
    (not *Downloads*: *Start with Windows* points to wherever the app is).
 
-3. Double-click **`src\Win11KeyRemapper.ahk`**.
+2. Double-click **`Win11KeyRemapper.exe`**. Nothing to install, and you don't need
+   AutoHotkey: that exe is the official AutoHotkey runtime, which runs the app's
+   script ([what is it exactly?](docs/FAQ.md#why-no-exe)). It works with Windows
+   11's *Smart App Control* on.
 
-4. The settings window opens on *Keys*. Pick what the NitroSense key should do —
+3. The settings window opens on *Keys*. Pick what the NitroSense key should do —
    changes apply at once. *Start with Windows* is already on. Close the window:
    the app lives in the tray. Double-click its icon, or open the app again, to
    come back.
 
+> [!NOTE]
+> **A signed installer is on the way** (Start menu shortcut, uninstall from
+> *Installed apps*). The project is applying for free code signing from
+> [SignPath Foundation](https://signpath.org/); until then, the
+> `Win11KeyRemapper-Setup` file in the releases is a preview that Windows may
+> block or warn about. The zip above works everywhere.
+
 Everything is changed from the settings window. If you'd rather edit a text file,
 `src\settings.ini` explains every option inside it (open it from *Settings* →
 *Advanced* → *Open folder*), and [`settings.example.ini`](settings.example.ini)
-shows them all with their defaults.
+shows them all with their defaults. *Advanced* → *Export…* / *Import…* saves them
+to a file or loads them, on this or another PC.
+
+Already have [AutoHotkey v2](https://www.autohotkey.com/) installed? You can also
+double-click `src\Win11KeyRemapper.ahk`; it's the same app.
 
 <a name="features"></a>
 ## ✨ Features
@@ -100,6 +102,11 @@ shows them all with their defaults.
 - **An optional log** of what the app does, for finding problems (off by
   default; it never records what you type).
 
+- **Back up your settings**: export them to a file, import them on another PC.
+
+- **Clean uninstall**: one click removes everything it created (it asks about
+  your settings).
+
 - **Light**: no admin rights, no driver, no service, no CPU use while idle.
 
 - **Free and open source** (MIT).
@@ -128,7 +135,7 @@ When there's a new version, the app tells you (*Settings* → *Updates*), and
 2. Download the new zip and extract it **over the same folder**, replacing the
    files. Your `settings.ini` isn't in the zip, so it stays.
 
-3. Double-click `src\Win11KeyRemapper.ahk` again.
+3. Double-click `Win11KeyRemapper.exe` again.
 
 </details>
 
@@ -136,15 +143,11 @@ When there's a new version, the app tells you (*Settings* → *Updates*), and
 <summary><b>How to uninstall</b></summary>
 <br>
 
-1. In the settings (*General*), turn off *Start with Windows*.
-
-2. Click *Exit* under *App* (or tray icon → *Exit*).
-
-3. Delete the app's folder, and `%APPDATA%\Win11KeyRemapper` if it exists.
-   Nothing else is installed.
-
-If you don't use AutoHotkey for anything else, you can uninstall it from
-Windows' *Installed apps*.
+Settings → *General* → **Uninstall…** (or, with the installer, Windows' *Installed
+apps* → *Windows 11 Key Remapper* → *Uninstall*). It removes the app's files, its
+*Start with Windows* and Start menu shortcuts, its log, any update it downloaded
+and its entry in *Installed apps*, and asks whether to delete your settings too
+(keep them if you might install it again). Nothing else is left on your PC.
 
 </details>
 
@@ -171,6 +174,34 @@ If the app helps you, a ⭐ helps others find it.
   </picture>
 </a>
 
+<a name="code-signing-policy"></a>
+## 🔏 Code signing policy
+
+Releases are built from this repository by
+[GitHub Actions](.github/workflows/build.yml) only; nothing is built or
+uploaded by hand.
+
+- **`Win11KeyRemapper.exe`** in the zip is the official, unmodified
+  [AutoHotkey v2](https://github.com/AutoHotkey/AutoHotkey/releases) runtime
+  (`AutoHotkey64.exe`, GPL v2: see `AutoHotkey-license.txt`), only renamed, as
+  downloaded from AutoHotkey's GitHub releases. The app itself is the readable
+  script next to it.
+- **The installer** (`Win11KeyRemapper-Setup`) is built with
+  [Inno Setup](https://jrsoftware.org/isinfo.php) from
+  [`installer/`](installer/Win11KeyRemapper.iss). Once approved: *Free code
+  signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+  [SignPath Foundation](https://signpath.org/)*. Until then it's unsigned.
+
+Team roles:
+
+- Committers and reviewers: [Ricardokraus](https://github.com/Ricardokraus)
+- Approvers (every signing request): [Ricardokraus](https://github.com/Ricardokraus)
+
+Privacy: this program will not transfer any information to other networked
+systems unless specifically requested by the user or the person installing or
+operating it. Its only network access is the check for a new version, a request
+to GitHub's public API once a day that sends nothing about you or your keys; it
+can be turned off in *Settings* → *Updates*. See [SECURITY.md](SECURITY.md).
 ## 📄 License
 
 [MIT](LICENSE) © 2026 Ricardo

@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **No AutoHotkey to install**: the release zip has a `Win11KeyRemapper.exe` to
+  double-click. It's the official AutoHotkey v2 runtime, unmodified and only
+  renamed (with its license), which runs the app's script through a small
+  launcher; Windows' Smart App Control lets it run.
+- **Installer (preview)**: `Win11KeyRemapper-Setup` installs the same files per
+  user (no admin), with a Start menu shortcut and an entry in *Installed apps*.
+  It will be signed through SignPath Foundation once the project is approved;
+  until then Windows may block or warn about it.
+- **Uninstall** (Settings → *General* → *Uninstall…*, or *Installed apps*):
+  removes the app's files, its shortcuts, its log, any update download and its
+  *Installed apps* entry, and asks whether to delete the settings too.
+  `--uninstall --quiet [--delete-settings]` does it without questions.
+- **Export / import settings** (Settings → *Advanced*): save them to a file or
+  load them on this or another PC; a file that isn't a valid settings file is
+  refused without changing anything.
+- README: *Code signing policy*; GitHub Actions now also checks the release end
+  to end (the zip's exe starts the app, install, uninstall).
+
+### Fixed
+
+- SECURITY.md said `AutoHotkey64.exe` is signed: it isn't (Windows trusts it by
+  reputation).
+
 ## [0.5.4] - 2026-10-20
 
 ### Changed

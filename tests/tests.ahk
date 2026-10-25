@@ -12,7 +12,7 @@ TestToast(title, sub, kind := "ok", holdMs := 5000) {
     TOASTS.Push(title " | " sub)        ; system notifications; NT.last = the last notice in the window
 }
 TestSend(keys) => SENT.Push(keys)
-TestRun(target, dir := "") => RAN.Push(target)
+TestRun(target, dir := "", opts := "") => RAN.Push(target)
 LastToast() => TOASTS.Length ? TOASTS[TOASTS.Length] : ""
 PASSES := 0, FAILS := 0
 Check(cond, label) {
@@ -487,7 +487,7 @@ danger := []
 for hwnd, wd in UI.widgets
     if (wd.kind = "button" && wd.variant = "danger")
         danger.Push(wd.Text)
-Eq(danger.Length, 3, "gui: Restart, Exit and Reset are danger buttons")
+Eq(danger.Length, 4, "gui: Restart, Exit, Uninstall and Reset are danger buttons")
 labels := "", nEdits := 0
 for item in UI.items
     if (item.page = "about" && UI.widgets.Has(item.ctl.Hwnd) && UI.widgets[item.ctl.Hwnd].kind = "link")
@@ -619,6 +619,66 @@ Check(DEVLOG.on && CFG.log && InStr(FileRead(SETTINGS_PATH), "`nLog=1"), "gui: l
 CloseSettings()
 Reset(DefaultSettings())
 Check(!DEVLOG.on, "log: off again with the defaults")
+
+; ---- 11. Export / import settings ----
+Reset(DefaultSettings())
+WriteSettings(SETTINGS_PATH, CFG)
+expFile := tmp "\exported.ini"
+ExportSettings(expFile)
+Eq(FileRead(expFile, "UTF-16"), SettingsText(CFG), "export: the active settings, explained")
+c := DefaultSettings(), c.toastWhen := "Never", c.targetVK := 0x14, c.targetSC := 0x3A, c.theme := "Dark"
+FileDelete(expFile), WriteSettings(expFile, c)
+Eq(ImportSettings(expFile), "", "import: accepted")
+Check(CFG.toastWhen = "Never" && CFG.targetVK = 0x14 && CFG.theme = "Dark", "import: applied")
+Eq(LoadSettings(SETTINGS_PATH).targetVK, 0x14, "import: and saved")
+FileAppend("hello", tmp "\notes.txt")
+Check(InStr(ImportSettings(tmp "\notes.txt"), "isn't a settings file") && CFG.toastWhen = "Never", "import: other files refused, nothing changes")
+FileAppend("[Remap]`r`nMode=Key`r`nTargetVK=0`r`n", tmp "\broken.ini")
+Check(InStr(ImportSettings(tmp "\broken.ini"), "Choose the key or shortcut") && CFG.targetVK = 0x14, "import: incomplete settings refused")
+Check(InStr(ImportSettings(tmp "\missing.ini"), "can't be read"), "import: missing file")
+Reset(DefaultSettings())
+WriteSettings(SETTINGS_PATH, CFG)
+
+; ---- 12. Uninstall (on a fake copy of the release in tmp) ----
+Eq(UninstallApp(), false, "uninstall: nothing happens unless confirmed")
+savedSettings := SETTINGS_PATH, savedLnk := APP.lnk, savedLnks := UNINSTALL_LNKS, savedKey := UNINSTALL_KEY
+UNINSTALL_KEY := "HKCU\Software\Win11KeyRemapperTest\Uninstall"
+MakeFakeInstall(root) {
+    global SETTINGS_PATH, UNINSTALL_LNKS
+    for file in PACKAGE_FILES {
+        SplitPath(root "\" file, , &dir)
+        DirCreate(dir)
+        FileAppend("x", root "\" file)
+    }
+    SETTINGS_PATH := root "\src\settings.ini"
+    WriteSettings(SETTINGS_PATH, DefaultSettings())
+    FileAppend("log", root "\src\Win11KeyRemapper.log"), FileAppend("old", root "\src\Win11KeyRemapper.old.log")
+    APP.lnk := root "\startup.lnk", FileAppend("x", APP.lnk)
+    UNINSTALL_LNKS := [root "\menu.lnk"], FileAppend("x", root "\menu.lnk")
+    RegWrite("x", "REG_SZ", UNINSTALL_KEY, "DisplayName")
+}
+root := tmp "\installed"
+MakeFakeInstall(root)
+UninstallFiles(root, false)
+left := ""
+loop files, root "\*", "FR"
+    left .= StrReplace(A_LoopFileFullPath, root "\") " "
+Eq(Trim(left), "Win11KeyRemapper.exe src\settings.ini", "uninstall: only the running exe (removed after exit) and the kept settings remain")
+Check(!DirExist(root "\docs") && !DirExist(root "\assets") && !DirExist(root "\src\lib"), "uninstall: empty folders removed")
+Check(!FileExist(root "\startup.lnk") && !FileExist(root "\menu.lnk"), "uninstall: shortcuts removed")
+regLeft := ""
+try regLeft := RegRead(UNINSTALL_KEY, "DisplayName")
+Eq(regLeft, "", "uninstall: Installed apps entry removed")
+DirDelete(root, true)
+MakeFakeInstall(root)
+UninstallFiles(root, true)
+left := ""
+loop files, root "\*", "FR"
+    left .= StrReplace(A_LoopFileFullPath, root "\") " "
+Check(Trim(left) = "Win11KeyRemapper.exe" && !DirExist(root "\src"), "uninstall: with the settings, nothing else is left  [" left "]")
+try RegDeleteKey("HKCU\Software\Win11KeyRemapperTest")
+SETTINGS_PATH := savedSettings, APP.lnk := savedLnk, UNINSTALL_LNKS := savedLnks, UNINSTALL_KEY := savedKey
+Eq(ParseArgs().uninstall, false, "no --uninstall argument")
 
 QUEUE.Length := 0
 try DirDelete(tmp, true)

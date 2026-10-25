@@ -4,7 +4,7 @@
 
 **Installing and running**
 
-- [Why do I need AutoHotkey? Is there an exe?](#why-no-exe)
+- [What is `Win11KeyRemapper.exe`? Do I need AutoHotkey?](#why-no-exe)
 - [My antivirus warns about it](#antivirus)
 - [Where are my settings? Can I edit them by hand?](#settings)
 
@@ -31,18 +31,24 @@ Not here? [Ask a question](https://github.com/Ricardokraus/Win11-Key-Remapper-Ac
 ## Installing and running
 
 <a name="why-no-exe"></a>
-### Why do I need AutoHotkey? Is there an exe?
+### What is `Win11KeyRemapper.exe`? Do I need AutoHotkey?
 
-Not for now. An exe made from an AutoHotkey script isn't code-signed, and
-Windows 11's *Smart App Control* blocks unsigned apps it doesn't know, with no
-*Run anyway* button (turning it off affects the whole PC, and often can't be
-undone without reinstalling Windows). AutoHotkey itself is signed, so the script
-runs everywhere, and you can read exactly what it does.
+You don't need to install anything. The app is an
+[AutoHotkey v2](https://www.autohotkey.com/) script (`src\Win11KeyRemapper.ahk`,
+readable), and `Win11KeyRemapper.exe` is the official AutoHotkey runtime
+(`AutoHotkey64.exe`) that runs it — unmodified, only renamed, straight from
+AutoHotkey's GitHub releases. Run without arguments, it runs the
+`Win11KeyRemapper.ahk` next to it, which starts the app.
 
-A standalone installer is on the way: a signed exe that doesn't need AutoHotkey,
-installs with a double-click and updates itself. It needs a code-signing
-certificate first (free programs for open-source projects exist, but they take
-some steps).
+Why not a "real" exe made from the script? Windows 11's *Smart App Control*
+blocks unsigned apps it doesn't know, with no *Run anyway* button (turning it
+off affects the whole PC, and often can't be undone without reinstalling
+Windows). A compiled script would be such an app; the AutoHotkey runtime is
+well known to Windows, so it runs everywhere.
+
+A signed installer is on the way: the project is applying for free code
+signing from SignPath Foundation (see the
+[Code signing policy](../README.md#code-signing-policy)).
 
 <a name="antivirus"></a>
 ### My antivirus warns about it
@@ -90,7 +96,8 @@ remapped and Win Lock works as usual. The switch is in Settings → *Advanced*.
 <a name="hidden-tray-icon"></a>
 ### I hid the tray icon. How do I open the settings?
 
-Open the app again (double-click `src\Win11KeyRemapper.ahk`). Instead of
+Open the app again (double-click `Win11KeyRemapper.exe`, or its Start menu
+entry if you used the installer). Instead of
 starting a second copy, the running one shows its settings window, where you can
 turn the icon back on.
 

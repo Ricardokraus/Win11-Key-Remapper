@@ -11,10 +11,13 @@ src/lib/GlassToast.ahk       "liquid glass" notification (standalone library)
 tests/run-tests.ps1          builds a patched copy of the app and runs tests/tests.ahk
 tests/tests.ahk              logic tests (fake key events fed to the hook procedure)
 tools/make-icon.ps1          regenerates assets/icon.ico
-tools/build.ps1              builds dist/Win11KeyRemapper.exe locally (not published, see "The exe")
+tools/build.ps1              compiles dist/Win11KeyRemapper.exe with Ahk2Exe (not published: see "The release")
+tools/smoke-test.ps1         end-to-end checks of a release (CI): zip exe, install, uninstall
+package/Win11KeyRemapper.ahk the launcher the release's Win11KeyRemapper.exe runs
+installer/                   Inno Setup script (per-user installer)
 assets/                      icon.ico, banner.svg, social-preview.png, screenshot-*.png
 settings.example.ini         every setting with its default (a test checks it's what the app writes)
-.github/workflows/build.yml  syntax check, tests, zip of the script, release on tag v*
+.github/workflows/build.yml  syntax check, tests, release folder + zip + installer, smoke test, signing, release on tag v*
 docs/FAQ.md, docs/TESTED-MODELS.md, SUPPORT.md   pages linked from the README's "More"
 .github/ISSUE_TEMPLATE/      bug, "works on my laptop", feature, question
 .github/dependabot.yml       monthly PRs to update the GitHub Actions
@@ -38,7 +41,7 @@ AutoHotkey64.exe src\Win11KeyRemapper.ahk
 powershell -ExecutionPolicy Bypass -File tools\make-icon.ps1
 
 # Build dist\Win11KeyRemapper.exe (downloads AutoHotkey + Ahk2Exe once into a
-# cache). Only for working on the exe: it isn't published (see "The exe").
+# cache). Only for working on the exe: it isn't published (see "The release: a runtime instead of an exe").
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
@@ -293,7 +296,7 @@ that the app sends).
 - From source (how the app is published now) the button is *Download*: it opens
   the release page, and the user extracts the new zip over the old folder.
 - *Install* (compiled exe in a writable folder only; dormant while no exe is
-  published, see "The exe"): `Download()` the zip and
+  published, see "The release: a runtime instead of an exe"): `Download()` the zip and
   `SHA256SUMS.txt` (blocking, but the user asked for it; the hook is reinstalled
   right after), check the zip's SHA-256 (`BCryptHash`), unzip with
   `Shell.Application`, check the new exe's SHA-256, rename the running exe to
@@ -498,46 +501,100 @@ The tests cover the logic; this needs real keys:
 - [ ] Toast at startup, after unlock (Win+L) and after the display turns off/on.
 - [ ] Toast on a second monitor with a different scale isn't black.
 - [ ] Settings window on both monitors looks right.
+- [ ] *Advanced* → *Export…* then *Import…* (also a file that isn't a settings file:
+  refused).
+- [ ] The release zip: double-click `Win11KeyRemapper.exe`, the app starts; *Start with
+  Windows* points to it. *General* → *Uninstall…*: No / Yes to the settings.
 
 ## Releasing
 
 1. Bump the version in `src/Win11KeyRemapper.ahk` (`APP.version` **and**
    `;@Ahk2Exe-SetVersion`, the workflow checks they match), and in
    `CHANGELOG.md` replace "Unreleased" with the date.
-2. Commit, then tag and push: `git tag v0.5.1` and `git push origin v0.5.1`.
+2. Commit, then tag and push: `git tag v0.5.5` and `git push origin v0.5.5`.
 3. The workflow refuses a tag that doesn't match the version, checks, tests,
-   zips `src\` + `assets\icon.ico` + README, LICENSE, CHANGELOG,
-   `settings.example.ini` and the pages the README links to (SUPPORT, SECURITY,
-   `docs\FAQ.md`, `docs\TESTED-MODELS.md`), creates the release as a draft with the zip,
-   `SHA256SUMS.txt` and short install notes, and publishes it. Doing it in that
-   order also works with immutable releases.
+   builds the release folder (below), zips it, builds the installer, runs
+   `tools/smoke-test.ps1` (the zip's exe starts the app; silent install, the
+   installed app starts, uninstall keeps only `settings.ini`; with
+   `--delete-settings` nothing is left), signs the installer if SignPath is set
+   up (you approve it on signpath.io while the job waits), writes
+   `SHA256SUMS.txt`, creates the release as a draft with install notes and
+   publishes it (that order also works with immutable releases).
 4. Running copies find the new version within a day (or with *Check now*) and
    *Download* opens the release page.
 
-## The exe (pending)
+## The release: a runtime instead of an exe
 
-v0.5.0 shipped a compiled `Win11KeyRemapper.exe` (Ahk2Exe: the AutoHotkey runtime
-with the script embedded). It's no longer published: **Windows 11's Smart App
-Control blocks unsigned exes it doesn't know**, with no *Run anyway* (unlike
-SmartScreen), and the only way around it is turning Smart App Control off for
-the whole PC. `AutoHotkey64.exe` is signed, so the script runs everywhere.
+A compiled script (Ahk2Exe: the AutoHotkey runtime with the script inside) is
+an unsigned exe nobody knows, and **Windows 11's Smart App Control blocks those**
+with no *Run anyway*; v0.5.0 shipped one and it didn't open on the author's
+laptop. `AutoHotkey64.exe` isn't signed either, but Windows knows it: tested
+under Smart App Control (2026-10-25) with the 2.0.28 and 2.0.31 runtimes from
+AutoHotkey's GitHub releases, renamed and marked as downloaded (Zone 3), both
+ran, even 2.0.31 published that same day. So the release folder is:
 
-To bring an installable, self-updating exe back:
+```
+Win11KeyRemapper.exe       AutoHotkey64.exe, unmodified, renamed (AHK_VERSION in the workflow)
+Win11KeyRemapper.ahk       package/Win11KeyRemapper.ahk: the launcher
+AutoHotkey-license.txt     the runtime's GPL v2 license (it's redistributed)
+src\Win11KeyRemapper.ahk   the app; settings.ini is created here
+src\lib\GlassToast.ahk
+assets\icon.ico            the app's icon (..\assets from src\)
+README.md, LICENSE, CHANGELOG.md, settings.example.ini, SUPPORT.md, SECURITY.md, docs\FAQ.md, docs\TESTED-MODELS.md
+```
 
-1. **Code signing.** SignPath Foundation signs open-source projects for free
-   (apply, then sign in GitHub Actions); Azure Artifact Signing (formerly Trusted
-   Signing) is a cheap paid option. Smart App Control lets signed apps run.
-2. Put the compile step back in the workflow (see the workflow at tag `v0.5.0`:
-   download Ahk2Exe, compile, VirusTotal scan with the optional `VT_API_KEY`
-   secret), sign the exe, and add it to the zip and `SHA256SUMS.txt`.
-3. Optionally an installer (Inno Setup, per user in `%LOCALAPPDATA%\Programs`, no
-   admin, so the in-place update keeps working). It must be signed too, close the
-   running copy first (post `WM_COMMAND 65307` to the hidden `Windows 11 Key
-   Remapper` window, or `Win11KeyRemapper.Instance` for 0.5.2 and older) and remove the startup shortcut and `settings.ini` on uninstall.
-4. The app side is already there: `InstallUpdate()` replaces a compiled exe in
-   place, `SetAutostart()` points the shortcut at the exe, and the icon comes
-   from the exe's resources.
+Run without a script, AutoHotkey runs the `.ahk` with its own name, so
+double-clicking `Win11KeyRemapper.exe` runs the launcher, which starts
+`src\Win11KeyRemapper.ahk` with the same runtime. `A_AhkPath` is then that exe,
+so *Start with Windows* points to it. `PACKAGE_FILES` in the app must list
+exactly these files (the workflow fails otherwise): the uninstall deletes them.
+Bumping `AHK_VERSION`: test the new runtime under Smart App Control first.
 
+The exe's icon is AutoHotkey's (changing it would modify the binary); the tray
+and the windows use the app's icon.
+
+## The installer and the uninstall
+
+`installer/Win11KeyRemapper.iss` (Inno Setup 7): the same folder, per user, in
+`%LOCALAPPDATA%\Programs\Win11KeyRemapper`, no admin; a Start menu shortcut
+(optional desktop one) that runs `Win11KeyRemapper.exe src\Win11KeyRemapper.ahk`;
+it closes a running copy first (`WM_COMMAND 65307` to the hidden `Windows 11 Key
+Remapper` window, or `Win11KeyRemapper.Instance` up to 0.5.2).
+
+**No Inno uninstaller** (`Uninstallable=no`): `unins000.exe` is written on the
+user's PC, unsigned, and Smart App Control would block it, leaving the app
+impossible to uninstall. The installer writes the *Installed apps* entry itself
+(`HKCU\...\Uninstall\Win11KeyRemapper`) with
+`UninstallString = Win11KeyRemapper.exe src\Win11KeyRemapper.ahk --uninstall`:
+the app uninstalls itself (`UninstallApp`), and so does Settings → *General* →
+*Uninstall…* for the zip. It asks to confirm and whether to delete the settings
+(`--quiet` skips the questions and keeps them, `--delete-settings` deletes
+them), closes a running copy, deletes the `PACKAGE_FILES`, the startup, Start
+menu and desktop shortcuts, the log, an update download, the entry, and empty
+folders; a hidden `cmd` deletes the running exe and the remaining folders once
+the app has exited. A git checkout is refused (it would delete the source).
+
+## Code signing (SignPath Foundation)
+
+Free for open-source projects; the certificate is issued to "SignPath
+Foundation". Their rules that matter here: only binaries built from the
+project's own source in CI are signed (so the installer, not the AutoHotkey
+runtime, which goes inside it unmodified), every signing request is approved by
+hand, MFA for every team member, a *Code signing policy* section on the home
+page (the README has it) with the attribution wording, team roles and a privacy
+statement, product name and version in the signed file's metadata (the
+installer's `VersionInfo*`).
+
+Setting it up, once the project is accepted:
+
+1. Repository secret `SIGNPATH_API_TOKEN` (a SignPath CI user's API token) and
+   repository variables `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`,
+   `SIGNPATH_POLICY_SLUG` (from the SignPath project).
+2. In SignPath, GitHub as the trusted build system for the project, and an
+   artifact configuration for a single `Win11KeyRemapper-Setup-v*.exe`
+   (Authenticode).
+3. That's all: the workflow's signing steps only run when the secret exists.
+   Until then the installer is published unsigned, as a preview.
 ## Ideas for later
 
 Multiple remap rules, Spanish UI (and README), a community model list.

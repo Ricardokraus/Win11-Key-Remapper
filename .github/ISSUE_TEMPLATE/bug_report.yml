@@ -28,9 +28,9 @@ body:
   - type: input
     id: ahk
     attributes:
-      label: AutoHotkey version
-      description: Windows Settings → Apps → Installed apps → AutoHotkey. Leave it empty if you can't find it.
-      placeholder: "2.0.28"
+      label: How do you run it?
+      description: The zip's Win11KeyRemapper.exe, the installer, or the .ahk with your own AutoHotkey (then its version, from Installed apps).
+      placeholder: "Win11KeyRemapper.exe from the zip"
 
   - type: input
     id: laptop
